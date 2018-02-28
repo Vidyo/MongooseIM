@@ -38,7 +38,7 @@ all() ->
      {group, invalidation},
      {group, multi_connection},
      {group, rebalancing},
-     {group, host_refresher}
+     {group, hosts_refresher}
     ].
 
 groups() ->
@@ -57,7 +57,7 @@ groups() ->
        test_update_senders_host_by_ejd_service
        %% TODO: Add test case fo global_distrib_addr option
       ]},
-     {host_refresher, [],
+     {hosts_refresher, [],
       [test_host_refreshing]},
      {cluster_restart, [],
       [
