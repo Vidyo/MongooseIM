@@ -159,6 +159,7 @@ create_ets(Name, Type) ->
                Pid -> Pid
            end,
 
+    ?DEBUG("Creating ETS table ~p of type ~p for options storage...", [Name, Type]),
     ets:new(Name, [named_table, public, Type, {read_concurrency, true}, {heir, Heir, testing}]).
 
 -spec resolve_endpoints([{inet:ip_address() | string(), inet:port_number()}]) ->
@@ -237,7 +238,10 @@ check_host(Key, Opts) ->
 
 -spec populate_opts_ets(module(), Opts :: proplists:proplist()) -> any().
 populate_opts_ets(Module, Opts) ->
-    [ets:insert(Module, {Key, translate_opt(Value)}) || {Key, Value} <- Opts].
+    [ begin
+          ?DEBUG("Inserting to ~p: ~p = ~p", [Module, Key, translate_opt(Value)]),
+          ets:insert(Module, {Key, translate_opt(Value)})
+      end || {Key, Value} <- Opts].
 
 -spec translate_opt(term()) -> term().
 translate_opt([Elem | _] = Opt) when is_list(Elem) ->
