@@ -409,6 +409,8 @@ bind_queue_to_exchange(Channel, {Queue, Exchange, RoutingKey}) ->
 ensure_exchange_present(_Connection, Channel, Exchange, 1) ->
     amqp_channel:call(Channel, #'exchange.declare'{exchange = Exchange,
                                                    type = <<"topic">>,
+                                                   %% this option allows to
+                                                   %% check if an exchange exists
                                                    passive = true}),
     true;
 ensure_exchange_present(Connection, Channel, Exchange, Retries) ->
