@@ -19,19 +19,20 @@
 %%% Types and definitions
 %%%===================================================================
 
--record(chat_event_data, {from :: jid:jid(),
-                          to :: jid:jid(),
-                          packet :: exml:element(),
-                          topic :: binary(),
-                          event :: user_chat_msg_sent
-                                 | user_chat_msg_recv}).
-
--type chat_event_data() :: #chat_event_data{}.
-
 -define(DEFAULT_PRESENCE_EXCHANGE, <<"presence">>).
 -define(DEFAULT_CHAT_MSG_EXCHANGE, <<"chat_msg">>).
 -define(DEFAULT_CHAT_MSG_SENT_TOPIC, <<"chat_msg_sent">>).
 -define(DEFAULT_CHAT_MSG_RECV_TOPIC, <<"chat_msg_recv">>).
+
+-record(chat_event_data, {from :: jid:jid(),
+                          to :: jid:jid(),
+                          packet :: exml:element(),
+                          topic :: binary(),
+                          event :: chat_msg_event()}).
+
+-type chat_msg_event() :: user_chat_msg_sent
+                        | user_chat_msg_recv.
+-type chat_event_data() :: #chat_event_data{}.
 
 %%%===================================================================
 %%% Exports
@@ -42,6 +43,9 @@
 
 %% API
 -export([push_event/3]).
+
+%% Types
+-export_type([chat_msg_event/0]).
 
 %%%===================================================================
 %%% Callbacks
