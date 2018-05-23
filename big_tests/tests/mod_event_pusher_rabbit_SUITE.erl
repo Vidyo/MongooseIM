@@ -263,16 +263,11 @@ chat_message_sent_messages_are_properly_formatted(Config) ->
               listen_to_chat_msg_sent_events_from_rabbit([AliceJID], Config),
               %% WHEN users chat
               escalus:send(Alice, escalus_stanza:chat_to(Bob, Message)),
-              receive
-                  {#'basic.deliver'{routing_key = AliceChatMsgSentRK},
-                   #amqp_msg{payload = AliceMsg}} ->
-                      ?assertMatch(#{<<"from_user_id">> := AliceJID,
-                                     <<"to_user_id">> := BobJID,
-                                     <<"message">> := Message},
-                                   jiffy:decode(AliceMsg, [return_maps]))
-              after
-                  5000 -> exit(timeout)
-              end
+              %% THEN
+              ?assertMatch(#{<<"from_user_id">> := AliceJID,
+                             <<"to_user_id">> := BobJID,
+                             <<"message">> := Message},
+                           get_decoded_message_from_rabbit(AliceChatMsgSentRK))
       end).
 
 chat_message_received_messages_are_properly_formatted(Config) ->
@@ -288,16 +283,11 @@ chat_message_received_messages_are_properly_formatted(Config) ->
               %% WHEN users chat
               escalus:send(Bob, escalus_stanza:chat_to(Alice, Message)),
               escalus:wait_for_stanzas(Alice, 2),
-              receive
-                  {#'basic.deliver'{routing_key = AliceChatMsgRecvRK},
-                   #amqp_msg{payload = AliceMsg}} ->
-                      ?assertMatch(#{<<"from_user_id">> := BobJID,
-                                     <<"to_user_id">> := AliceJID,
-                                     <<"message">> := Message},
-                                   jiffy:decode(AliceMsg, [return_maps]))
-              after
-                  5000 -> exit(timeout)
-              end
+              %% THEN
+              ?assertMatch(#{<<"from_user_id">> := BobJID,
+                             <<"to_user_id">> := AliceJID,
+                             <<"message">> := Message},
+                           get_decoded_message_from_rabbit(AliceChatMsgRecvRK))
       end).
 
 %%--------------------------------------------------------------------
