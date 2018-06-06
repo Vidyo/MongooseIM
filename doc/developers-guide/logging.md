@@ -73,7 +73,15 @@ This format is Splunk and ELK friendly.
 `user=~ts` is often used too.
 
 
-A common way to name event is `event=function_name_failed`.
+A common way to name an error event is `event=function_name_failed`.
+For example, `event=remove_user_failed`. Use the advice critically, it would
+not work well for any function. Counter example:
+
+```erlang
+handle_info(Info, State) ->
+    ?ERROR_MSG("issue=unexpected_info_received info=~1000p", [Info]),
+    {noreply, State}.
+```
 
 Log messages should not contain new lines.
 
