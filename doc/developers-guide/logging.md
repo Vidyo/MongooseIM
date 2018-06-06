@@ -29,7 +29,7 @@ Don't use `ERROR_MSG` for cases that are not errors.
 
 # Logging levels
 
-A system operator can choose log level by setting loglevel in `mongooseim.cfg`.
+A system operator can choose log level by setting loglevel in `ejabberd.cfg`.
 
 - level 5 - debug
 - level 4 - info
@@ -49,7 +49,8 @@ Levels 3 or 2 are usually used for production systems.
 
 We use modified [logfmt](https://brandur.org/logfmt) format.
 
-This format is Splunk and ELK friendly.
+This format is [Splunk](https://www.splunk.com/en_us/solutions/solution-areas/log-management.html)
+and [ELK](https://www.elastic.co/elk-stack) friendly.
 
 `event=something_interesting` field is required.
 
@@ -99,8 +100,8 @@ Use whitespace as a field separator:
 
 # Filtering logs by module
 
-Setting loglevel in ejabberd.cfg to debug leads to a flood of messages in logs.
-To set a custom loglevel for a module, call:
+Setting loglevel to `debug` leads to a flood of messages in logs.
+To set different loglevel for just one module, call:
 
 ```erlang
 ejabberd_loglevel:set(3).
