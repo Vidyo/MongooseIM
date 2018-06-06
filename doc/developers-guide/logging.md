@@ -12,7 +12,7 @@ or
 -include("mongoose.hrl").
 ```
 
-# Logging macroses
+# Logging macros
 
 There are several macroses:
 
