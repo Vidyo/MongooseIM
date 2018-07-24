@@ -27,7 +27,7 @@
 
 -include("mod_revproxy.hrl").
 
--record(state, {timeout, length, custom_headers}).
+-record(state, {timeout, length, custom_headers, custom_resp_headers}).
 
 -type option() :: {atom(), any()}.
 -type state() :: #state{}.
@@ -71,9 +71,11 @@ init(_Transport, Req, Opts) ->
     Timeout = gen_mod:get_opt(timeout, Opts, 5000),
     Length = gen_mod:get_opt(body_length, Opts, 8000000),
     Headers = gen_mod:get_opt(custom_headers, Opts, []),
+    RespHeaders = gen_mod:get_opt(custom_resp_headers, Opts, []),
     {ok, Req, #state{timeout=Timeout,
                      length=Length,
-                     custom_headers=Headers}}.
+                     custom_headers=Headers,
+                     custom_resp_headers=RespHeaders}}.
 
 -spec handle(cowboy_req:req(), state()) -> {ok, cowboy_req:req(), state()}.
 handle(Req, State) ->
@@ -115,10 +117,15 @@ pass_request(Host, Path, Method, Req,
     Response = fusco:request(Pid, Path, Method, Headers1, Body, Timeout),
     return_response(Response, Req2, State).
 
-return_response({ok, {{Status, _}, Headers, Body, _, _}}, Req, State) ->
+return_response({ok, {{Status, _}, Headers, Body, _, _}}, Req,
+				#state{custom_resp_headers=CustomHeaders}=State) ->
     StatusI = binary_to_integer(Status),
     Headers1 = remove_confusing_headers(Headers),
-    {ok, Req1} = cowboy_req:reply(StatusI, Headers1, Body, Req),
+    case StatusI div 100 of
+        2 -> Headers2 = Headers1 ++ CustomHeaders;
+        _ -> Headers2 = Headers1
+    end,
+    {ok, Req1} = cowboy_req:reply(StatusI, Headers2, Body, Req),
     {ok, Req1, State};
 return_response({error, connect_timeout}, Req, State) ->
     {ok, Req1} = cowboy_req:reply(504, Req),
