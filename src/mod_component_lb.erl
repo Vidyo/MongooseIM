@@ -6,6 +6,7 @@
 
 -include("mongoose.hrl").
 -include("jid.hrl").
+-include("mod_component_lb.hrl").
 
 %% API
 -export([start_link/2, get_backends/1, get_frontend/1]).
@@ -20,10 +21,14 @@
 %% -export([init/1, terminate/2, handle_call/3, handle_cast/2,
 %%          handle_info/2, code_change/3]).
 
--record(state, {lb = #{},
-				backends = #{}}).
+%% Hooks callbacks
+-export([node_cleanup/2, unregister_subhost/2]).
 
--define(PROCNAME, ejabberd_mod_component_lb).
+-record(state, {lb = #{},
+				backends = #{},
+				host}).
+
+%% -define(PROCNAME, ejabberd_mod_component_lb).
 
 %%====================================================================
 %% API
@@ -44,6 +49,47 @@ get_backends(Domain) ->
 get_frontend(Domain) ->
 	Proc = ?MODULE, %%gen_mod:get_module_proc(Host, ?PROCNAME),
 	gen_server:call(Proc, {frontend, Domain}).
+
+node_cleanup(Acc, Node) ->
+	?INFO_MSG("component_lb node_cleanup for ~p", [Node]),
+	{node, Backend} = Node,
+	delete_backend(Backend),
+	Acc.
+	%% F = fun() ->
+    %%             Keys = mnesia:select(
+    %%                      component_lb,
+    %%                      [{#component_lb{domain = '$1',  key = '$2', _ = '_'},
+    %%                        [{'==', {node, '$1'}, Node}],
+    %%                        ['$2']}]),
+    %%             lists:foreach(fun(Key) ->
+    %%                                   mnesia:delete({iq_response, Key})
+    %%                           end, Keys)
+    %%     end,
+    %% mnesia:transaction(F),
+    %% Acc.
+
+unregister_subhost(Acc, LDomain) ->
+	?INFO_MSG("component_lb unregister_subhost for ~p", [LDomain]),
+	delete_backend(LDomain),
+	Acc.
+
+delete_backend(Backend) ->
+	F = fun() ->
+                Keys = mnesia:dirty_select(
+                         component_lb,
+                         [{#component_lb{backend = '$1',  key = '$2', _ = '_'},
+                           [{'==', '$1', Backend}],
+                           ['$2']}]),
+                lists:foreach(fun(Key) ->
+                                      mnesia:delete({component_lb, Key})
+                              end, Keys)
+        end,
+    {atomic, _} = mnesia:transaction(F).
+
+%% mnesia:dirty_select(component_lb, [{#component_lb{backend = '$1',  key = '$2', _ = '_'}, [{'==', '$1', Backend}], ['$2']}])
+
+% Keys = mnesia:dirty_select(foo, [{#foo{bar = '$1', _ = '_'}, [], ['$1']}])
+% lists:foreach(fun(Key) -> mnesia:delete({foo, Key}) end, Keys)
 
 %%====================================================================
 %% gen_mod callbacks
@@ -70,9 +116,17 @@ stop(Host) ->
 %% -spec init(Args :: list()) -> {ok, state()}.
 init([Host, Opts]) ->
 	?INFO_MSG("~p: ~p", [Host, Opts]),
-	State = #state{},
+	State = #state{host = Host},
 	State1 = process_opts(Opts, State),
 	?INFO_MSG("LB State: ~p", [State1]),
+    mnesia:create_table(component_lb,
+                        [{ram_copies, [node()]},
+                         {type, set},
+						 {index, [#component_lb.backend]},
+						 {attributes, record_info(fields, component_lb)}]),
+	mnesia:add_table_copy(key, node(), ram_copies),
+	ejabberd_hooks:add(node_cleanup, global, ?MODULE, node_cleanup, 90),
+	ejabberd_hooks:add(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
 	{ok, State1}.
 
 handle_call({backends, Domain}, _From, #state{lb = Frontends} = State) ->
@@ -88,6 +142,12 @@ handle_call({frontend, Domain}, _From, #state{backends = Backends} = State) ->
 handle_cast(Request, State) ->
 	?INFO_MSG("handle_cast: ~p, ~p", [Request, State]),
 	{noreply, State}.
+
+terminate(_Reason, #state{host = Host} = State) ->
+	?INFO_MSG("mod_component_lb:terminate", []),
+    ejabberd_hooks:delete(node_cleanup, global, ?MODULE, node_cleanup, 90),
+	ejabberd_hooks:delete(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
+    ok.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
