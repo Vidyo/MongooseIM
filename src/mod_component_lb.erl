@@ -75,6 +75,7 @@ unregister_subhost(Acc, LDomain) ->
 
 delete_backend(Backend) ->
 	F = fun() ->
+				mnesia:lock({table, component_lb}, write),
                 Keys = mnesia:dirty_select(
                          component_lb,
                          [{#component_lb{backend = '$1',  key = '$2', _ = '_'},
