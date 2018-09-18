@@ -26,6 +26,7 @@ filter(From, To, Acc, Packet) ->
 route(From, #jid{lserver = LServer} = To, Acc, Packet) ->
 	case mod_component_lb:get_backends(LServer) of
 		error ->
+			?DEBUG("backend not found for ~p", [LServer]),
 			{From, To, Acc, Packet};
 		{ok, Backends} ->
 			route_to_backend(Backends, From, To, Acc, Packet)
@@ -44,11 +45,11 @@ route_to_backend(Backends, From, #jid{luser = LUser} = To, Acc, Packet) ->
 
 route_transient_to_backend(Backends, #jid{luser = LUser} = From, #jid{lserver = LServer} = To, Acc, Packet) ->
 	case get_random_backend(Backends, LUser) of
-		{Domain, Handler} ->
+		{Domain, Handler, _Node} ->
 			?INFO_MSG("route transient ~p => ~p", [To, Domain]),
 			mongoose_local_delivery:do_route(From, To, Acc, Packet, LServer, Handler),
 			done;
-		{From, To, Acc, Packet} ->
+		[] ->
 			{From, To, Acc, Packet}
 	end.
 
@@ -61,13 +62,15 @@ route_persistent_to_backend(Backends, From, #jid{luser = LUser, lserver = LServe
 			done;
 		[] ->
 			case get_random_backend(Backends, LUser) of
-				{Domain, Handler} ->
+				{Domain, Handler, Node} ->
 					Record = #component_lb{key=Key, backend=Domain, handler=Handler},
 					{atomic, _} = mnesia:transaction(fun () -> mnesia:write(Record) end),
 					?INFO_MSG("inserted backend to mnesia: ~p => ~p", [Key, Record]),
+					JID = jid:make(LUser, LServer, <<>>),
+					mod_component_lb:start_ping(ok, Node, JID),
 					mongoose_local_delivery:do_route(From, To, Acc, Packet, LServer, Handler),
 					done;
-				{From, To, Acc, Packet} ->
+				[] ->
 					{From, To, Acc, Packet}
 			end;
 		Any ->
@@ -92,6 +95,6 @@ get_random_backend(Backends, LUser) ->
 		_  ->
 			N = erlang:phash2(LUser, length(ActiveBackends)),
 			[Backend|_] = lists:nth(N+1, ActiveBackends),
-			#external_component{domain = Domain, handler = Handler} = Backend,
-			{Domain, Handler}
+			#external_component{domain = Domain, handler = Handler, node = Node} = Backend,
+			{Domain, Handler, Node}
 	end.

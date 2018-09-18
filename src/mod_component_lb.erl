@@ -5,18 +5,20 @@
 -behaviour(gen_mod).
 
 -include("mongoose.hrl").
+-include("mongoose_ns.hrl").
 -include("jid.hrl").
+-include("jlib.hrl").
 -include("mod_component_lb.hrl").
 
 %% API
--export([start_link/2, get_backends/1, get_frontend/1]).
+-export([start_link/2, get_backends/1, get_frontend/1, start_ping/3]).
 
 %% gen_mod callbacks
 -export([start/2,
          stop/1]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2,
+-export([init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2,
          code_change/3]).
 
 %% Hooks callbacks
@@ -24,21 +26,20 @@
 
 -record(state, {lb = #{},
 				backends = #{},
+				timers = maps:new(),
 				host}).
 
+-define(PING_INTERVAL, 5000).
+-define(PING_REQ_TIMEOUT, ?PING_INTERVAL div 2).
 %% -define(PROCNAME, ejabberd_mod_component_lb).
 
 %%====================================================================
 %% API
 %%====================================================================
 start_link(Host, Opts) ->
-    Proc = ?MODULE, %%gen_mod:get_module_proc(Host, ?PROCNAME),
+    Proc = ?MODULE,
 	?INFO_MSG("start_link: host ~p, proc ~p", [Host, Proc]),
     gen_server:start_link({local, Proc}, ?MODULE, [Host, Opts], []).
-
-    %% Proc = gen_mod:get_module_proc(Host, ?PROCNAME),
-	%% ?INFO_MSG("start_link: host ~p, proc ~p", [Host, Proc]),
-    %% gen_server:start_link({local, Proc}, ?MODULE, [Host, Opts], []).
 
 get_backends(Domain) ->
 	mod_component_lb_dynamic:get_backends(Domain).
@@ -46,6 +47,13 @@ get_backends(Domain) ->
 get_frontend(Domain) ->
 	Proc = ?MODULE, %%gen_mod:get_module_proc(Host, ?PROCNAME),
 	gen_server:call(Proc, {frontend, Domain}).
+
+start_ping(Host, Node, JID) when JID#jid.lresource =:= <<>> ->
+	?INFO_MSG("start_ping: ~p, ~p, ~p", [Host, Node, JID]),
+	gen_server:cast({?MODULE, Node}, {start_ping, JID}).
+
+%% stop_ping(Host, JID) ->
+%%     gen_server:cast(?MODULE, {stop_ping, JID}).
 
 node_cleanup(Acc, Node) ->
 	?INFO_MSG("component_lb node_cleanup for ~p", [Node]),
@@ -123,9 +131,40 @@ handle_call({frontend, Domain}, _From, #state{backends = Backends} = State) ->
 %% 	?INFO_MSG("stop"),
 %% 	{stop, normal, ok, State}.
 
+handle_cast({start_ping, JID}, State) ->
+    Timers = add_timer(JID, ?PING_INTERVAL, State#state.timers),
+    {noreply, State#state{timers = Timers}};
+handle_cast({iq_pang, #jid{luser = LUser, lserver = LServer} = JID, timeout}, State) ->
+	?INFO_MSG("backend ping timeout on ~p", [JID]),
+    Timers = del_timer(JID, State#state.timers),
+	Key = {LUser, LServer},
+	{atomic, _} = mnesia:transaction(fun () -> mnesia:delete({component_lb, Key}) end),
+    {noreply, State#state{timers = Timers}};
+handle_cast({iq_pang, JID, Response}, State) ->
+	{noreply, State};
 handle_cast(Request, State) ->
 	?INFO_MSG("handle_cast: ~p, ~p", [Request, State]),
 	{noreply, State}.
+
+handle_info({timeout, _TRef, {ping, JID}}, State) ->
+	?INFO_MSG("Sending ping disco to ~p", [JID]),
+    IQ = #iq{type = get,
+             sub_el = [#xmlel{name = <<"query">>,
+                              attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
+    Pid = self(),
+    F = fun(_From, _To, Acc, Response) ->
+                gen_server:cast(Pid, {iq_pang, JID, Response}),
+                Acc
+        end,
+    From = jid:make(<<"">>, State#state.host, <<"">>),
+    Acc = mongoose_acc:from_element(IQ, From, JID),
+	?INFO_MSG("Routing ping disco to ~p", [JID]),
+    ejabberd_local:route_iq(From, JID, Acc, IQ, F, ?PING_REQ_TIMEOUT),
+	Timers = add_timer(JID, ?PING_INTERVAL, State#state.timers),
+    {noreply, State#state{timers = Timers}};
+handle_info(Info, State) ->
+	?INFO_MSG("handle_info: ~p", [Info]),
+    {noreply, State}.
 
 terminate(_Reason, #state{host = Host} = State) ->
 	?INFO_MSG("mod_component_lb:terminate", []),
@@ -135,6 +174,45 @@ terminate(_Reason, #state{host = Host} = State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+add_timer(JID, Interval, Timers) ->
+    LJID = jid:to_lower(JID),
+    NewTimers = case maps:find(LJID, Timers) of
+                    {ok, OldTRef} ->
+                        cancel_timer(OldTRef),
+                        maps:remove(LJID, Timers);
+                    _ ->
+                        Timers
+                end,
+    TRef = erlang:start_timer(Interval, self(), {ping, JID}),
+    maps:put(LJID, TRef, NewTimers).
+
+del_timer(JID, Timers) ->
+    LJID = jid:to_lower(JID),
+    case maps:find(LJID, Timers) of
+        {ok, TRef} ->
+            cancel_timer(TRef),
+            maps:remove(LJID, Timers);
+        _ ->
+            Timers
+    end.
+
+cancel_timer(TRef) ->
+    case erlang:cancel_timer(TRef) of
+        false ->
+            receive
+                {timeout, TRef, _} ->
+                    ok
+            after 0 ->
+                      ok
+            end;
+        _ ->
+            ok
+    end.
 
 process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
@@ -162,7 +240,7 @@ process_lb_backends(LBDomain, [Backend|Backends], #state{backends = StateBackend
 	StateBackends1 = StateBackends#{Backend => LBDomain},
 	State1 = State#state{backends = StateBackends1},
 	process_lb_backends(LBDomain, Backends, State1);
-process_lb_backends(LBDomain, [], State) ->
+process_lb_backends(_LBDomain, [], State) ->
 	State.
 
 compile_frontends(Frontends) ->
