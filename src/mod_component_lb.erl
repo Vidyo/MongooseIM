@@ -213,17 +213,17 @@ process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
 	process_opts(Opts, State1);
 process_opts([Opt|Opts], State) ->
-	?ERROR_MSG("unknown opt: ~p", [Opt]),
+	?WARNING_MSG("unknown opt: ~p", [Opt]),
 	process_opts(Opts, State);
 process_opts([], State) ->
 	State.
 
-process_lb_opt({LBDomain, Backends}, #state{lb = LBDomains} = State)
+process_lb_opt({Frontend, Backends}, #state{lb = LBDomains} = State)
   when is_list(Backends) ->
-	?INFO_MSG("lb opt: ~p => ~p", [LBDomain, Backends]),
-    LBDomainBin = list_to_binary(LBDomain),
+	?INFO_MSG("lb opt: ~p => ~p", [Frontend, Backends]),
+    FrontendBin = list_to_binary(Frontend),
 	BackendsBin = lists:map(fun erlang:list_to_binary/1, Backends),
-	LBDomains1  = LBDomains#{LBDomainBin => BackendsBin},
+	LBDomains1  = LBDomains#{FrontendBin => BackendsBin},
 	State1      = State#state{lb = LBDomains1},
 	?INFO_MSG("lb opt state: ~p", [State1]),
 	State1;
