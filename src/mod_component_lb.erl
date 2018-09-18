@@ -8,14 +8,13 @@
 -include("mongoose_ns.hrl").
 -include("jid.hrl").
 -include("jlib.hrl").
--include("mod_component_lb.hrl").
+-include("external_component.hrl").
 
 %% API
--export([start_link/2, get_backends/1, start_ping/3]).
+-export([start_link/2, lookup_backend/2]).
 
 %% gen_mod callbacks
--export([start/2,
-         stop/1]).
+-export([start/2, stop/1]).
 
 %% gen_server callbacks
 -export([init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2,
@@ -27,10 +26,11 @@
 -record(state, {lb = #{},
 				timers = maps:new(),
 				host}).
+-record(component_lb, {key, backend, handler, node}).
 
+-define(lookup_key(LUser, LServer), {LUser, LServer}).
 -define(PING_INTERVAL, 5000).
 -define(PING_REQ_TIMEOUT, ?PING_INTERVAL div 2).
-%% -define(PROCNAME, ejabberd_mod_component_lb).
 
 %%====================================================================
 %% API
@@ -40,15 +40,19 @@ start_link(Host, Opts) ->
 	?INFO_MSG("start_link: host ~p, proc ~p", [Host, Proc]),
     gen_server:start_link({local, Proc}, ?MODULE, [Host, Opts], []).
 
-get_backends(Domain) ->
-	mod_component_lb_dynamic:get_backends(Domain).
+lookup_backend(From, #jid{lserver = LServer} = To) ->
+	case get_backends(LServer) of
+		error ->
+			?DEBUG("backend not found for ~p", [LServer]),
+			[];
+			%% {From, To, Acc, Packet};
+		{ok, Backends} ->
+			lookup_backend(Backends, From, To)
+	end.
 
-start_ping(Host, Node, JID) when JID#jid.lresource =:= <<>> ->
-	?INFO_MSG("start_ping: ~p, ~p, ~p", [Host, Node, JID]),
-	gen_server:cast({?MODULE, Node}, {start_ping, JID}).
-
-%% stop_ping(Host, JID) ->
-%%     gen_server:cast(?MODULE, {stop_ping, JID}).
+%%====================================================================
+%% Hooks callbacks
+%%====================================================================
 
 node_cleanup(Acc, Node) ->
 	?INFO_MSG("component_lb node_cleanup for ~p", [Node]),
@@ -132,11 +136,11 @@ handle_cast({start_ping, JID}, State) ->
 
 handle_cast({iq_pong, JID, timeout}, State) ->
 	?INFO_MSG("backend ping timeout on ~p", [JID]),
-	State1 = delete_route(JID, State),
+	State1 = delete_record(JID, State),
 	{noreply, State1};
 handle_cast({iq_pong, JID, #iq{type = error} = Response}, State) ->
 	?INFO_MSG("backend ping error response on ~p: ~p", [JID, Response]),
-	State1 = delete_route(JID, State),
+	State1 = delete_record(JID, State),
 	{noreply, State1};
 handle_cast({iq_pong, _JID, _Response}, State) ->
 	{noreply, State};
@@ -178,6 +182,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %%====================================================================
 
+start_ping(Host, Node, JID) when JID#jid.lresource =:= <<>> ->
+	?INFO_MSG("start_ping: ~p, ~p, ~p", [Host, Node, JID]),
+	gen_server:cast({?MODULE, Node}, {start_ping, JID}).
+
+%% stop_ping(Host, JID) ->
+%%     gen_server:cast(?MODULE, {stop_ping, JID}).
+
 add_timer(JID, Interval, Timers) ->
     LJID = jid:to_lower(JID),
     NewTimers = case maps:find(LJID, Timers) of
@@ -213,11 +224,67 @@ cancel_timer(TRef) ->
             ok
     end.
 
-delete_route(#jid{luser = LUser, lserver = LServer} = JID, State) ->
+delete_record(#jid{luser = LUser, lserver = LServer} = JID, State) ->
 	Timers = del_timer(JID, State#state.timers),
-	Key = {LUser, LServer},
+	Key = ?lookup_key(LUser, LServer),
 	{atomic, _} = mnesia:transaction(fun () -> mnesia:delete({component_lb, Key}) end),
     State#state{timers = Timers}.
+
+get_backends(Domain) ->
+	mod_component_lb_dynamic:get_backends(Domain).
+
+lookup_backend(Backends, From, #jid{luser = LUser} = To) ->
+	case LUser of
+		<<"">> ->
+			lookup_backend_transient(Backends, From);
+		_ ->
+			lookup_backend_persistent(Backends, To)
+	end.
+
+lookup_backend_transient(Backends, #jid{luser = LUser} = From) ->
+	get_random_backend(Backends, LUser).
+
+lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = To) ->
+	Key = ?lookup_key(LUser, LServer),
+	case mnesia:dirty_read(component_lb, Key) of
+		[#component_lb{key = Key, backend = Domain, handler = Handler, node = Node}] ->
+			?INFO_MSG("found backend in mnesia: ~p => ~p", [Key, {Domain, Handler}]),
+			{Domain, Handler, Node};
+			%% mongoose_local_delivery:do_route(From, To, Acc, Packet, LServer, Handler),
+			%% done;
+		[] ->
+			case get_random_backend(Backends, LUser) of
+				{Domain, Handler, Node} ->
+					Record = #component_lb{key=Key, backend=Domain, handler=Handler, node=Node},
+					{atomic, _} = mnesia:transaction(fun () -> mnesia:write(Record) end),
+					?INFO_MSG("inserted backend to mnesia: ~p => ~p", [Key, Record]),
+					JID = jid:make(LUser, LServer, <<>>),
+					start_ping(ok, Node, JID),
+					{Domain, Handler, Node};
+					%% mongoose_local_delivery:do_route(From, To, Acc, Packet, LServer, Handler),
+					%% done;
+				[] ->
+					[]
+			end;
+		Any ->
+			?ERROR_MSG("Unexpected mnesia lookup result: ~p", [Any]),
+			error
+	end.
+
+get_random_backend(Backends, LUser) ->
+	Backends1 = lists:map(fun ejabberd_router:lookup_component/1, Backends),
+	ActiveBackends = lists:filter(fun(Backend) -> Backend /= [] end,
+								  Backends1),
+	case ActiveBackends of
+		[] -> [];
+		_  ->
+			N = erlang:phash2(LUser, length(ActiveBackends)),
+			% external_component_global stores a list for god knows what reason;
+			% just grab the first one - that's what mongoose_router_external does
+			[Backend|_] = lists:nth(N+1, ActiveBackends),
+			#external_component{domain = Domain, handler = Handler, node = Node} = Backend,
+			{Domain, Handler, Node}
+	end.
 
 process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
