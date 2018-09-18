@@ -18,8 +18,6 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2,
          code_change/3]).
-%% -export([init/1, terminate/2, handle_call/3, handle_cast/2,
-%%          handle_info/2, code_change/3]).
 
 %% Hooks callbacks
 -export([node_cleanup/2, unregister_subhost/2]).
@@ -55,18 +53,6 @@ node_cleanup(Acc, Node) ->
 	{node, Backend} = Node,
 	delete_backend(Backend),
 	Acc.
-	%% F = fun() ->
-    %%             Keys = mnesia:select(
-    %%                      component_lb,
-    %%                      [{#component_lb{domain = '$1',  key = '$2', _ = '_'},
-    %%                        [{'==', {node, '$1'}, Node}],
-    %%                        ['$2']}]),
-    %%             lists:foreach(fun(Key) ->
-    %%                                   mnesia:delete({iq_response, Key})
-    %%                           end, Keys)
-    %%     end,
-    %% mnesia:transaction(F),
-    %% Acc.
 
 unregister_subhost(Acc, LDomain) ->
 	?INFO_MSG("component_lb unregister_subhost for ~p", [LDomain]),
@@ -131,10 +117,10 @@ init([Host, Opts]) ->
 	{ok, State1}.
 
 handle_call({backends, Domain}, _From, #state{lb = Frontends} = State) ->
-	?INFO_MSG("backends for ~p in ~p", [Domain, Frontends]),
+	%% ?DEBUG("backends for ~p in ~p", [Domain, Frontends]),
 	{reply, maps:find(Domain, Frontends), State};
 handle_call({frontend, Domain}, _From, #state{backends = Backends} = State) ->
-	?INFO_MSG("frontends for ~p", [Domain]),
+	%% ?DEBUG("frontends for ~p", [Domain]),
 	{reply, maps:find(Domain, Backends), State}.
 %% handle_call(stop, _From, State) ->
 %% 	?INFO_MSG("stop"),
@@ -152,47 +138,6 @@ terminate(_Reason, #state{host = Host} = State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-route(From, To, Acc, Packet) ->
-	case route_to(From, To, Acc, Packet) of
-		{F, T, A, P} ->
-			{F, T, A, P};
-		_ ->
-			case route_from(From, To, Acc, Packet) of
-				{F, T, A, P} ->
-					{F, T, A, P};
-				_ ->
-					{From, To, Acc, Packet}
-			end
-	end.
-
-route_to(From, #jid{lserver=LServer, luser=LUser} = To, Acc, Packet) ->
-	case catch gen_mod:get_module_opt(?MYNAME, ?MODULE, LServer) of
-		[] ->
-			ok;
-		[H|T] ->
-			LBServer = route_lb(LUser, [H|T]),
-			To1 = To#jid{lserver = LBServer, server = LBServer},
-			{From, To1, Acc, Packet};
-		_ ->
-			ok
-	end.
-
-route_from(#jid{lserver=LServer, luser = <<>>} = From, To, Acc, Packet) ->
-	ok;
-route_from(#jid{lserver=LServer, luser=LUser} = From, To, Acc, Packet) ->
-	ok.
-
-route_lb(LUser, LBDomains) ->
-	F = fun(Domain) ->
-				case ets:lookup(external_component_global, Domain) of
-					[] -> false;
-					[H|T] -> true
-				end
-		end,
-	ActiveLBDomains = lists:filter(F, LBDomains),
-	N = erlang:phash2(LUser, length(ActiveLBDomains)),
-	lists:nth(N+1, ActiveLBDomains).
 
 process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
