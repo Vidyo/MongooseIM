@@ -129,14 +129,18 @@ handle_call(Request, From, State) ->
 handle_cast({start_ping, JID}, State) ->
     Timers = add_timer(JID, ?PING_INTERVAL, State#state.timers),
     {noreply, State#state{timers = Timers}};
-handle_cast({iq_pang, #jid{luser = LUser, lserver = LServer} = JID, timeout}, State) ->
+
+handle_cast({iq_pong, JID, timeout}, State) ->
 	?INFO_MSG("backend ping timeout on ~p", [JID]),
-    Timers = del_timer(JID, State#state.timers),
-	Key = {LUser, LServer},
-	{atomic, _} = mnesia:transaction(fun () -> mnesia:delete({component_lb, Key}) end),
-    {noreply, State#state{timers = Timers}};
-handle_cast({iq_pang, JID, Response}, State) ->
+	State1 = delete_route(JID, State),
+	{noreply, State1};
+handle_cast({iq_pong, JID, #iq{type = error} = Response}, State) ->
+	?INFO_MSG("backend ping error response on ~p: ~p", [JID, Response]),
+	State1 = delete_route(JID, State),
+	{noreply, State1};
+handle_cast({iq_pong, _JID, _Response}, State) ->
 	{noreply, State};
+
 handle_cast(Request, State) ->
 	?INFO_MSG("handle_cast: ~p, ~p", [Request, State]),
 	{noreply, State}.
@@ -148,7 +152,7 @@ handle_info({timeout, _TRef, {ping, JID}}, State) ->
                               attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
     Pid = self(),
     F = fun(_From, _To, Acc, Response) ->
-                gen_server:cast(Pid, {iq_pang, JID, Response}),
+                gen_server:cast(Pid, {iq_pong, JID, Response}),
                 Acc
         end,
     From = jid:make(<<"">>, State#state.host, <<"">>),
@@ -208,6 +212,12 @@ cancel_timer(TRef) ->
         _ ->
             ok
     end.
+
+delete_route(#jid{luser = LUser, lserver = LServer} = JID, State) ->
+	Timers = del_timer(JID, State#state.timers),
+	Key = {LUser, LServer},
+	{atomic, _} = mnesia:transaction(fun () -> mnesia:delete({component_lb, Key}) end),
+    State#state{timers = Timers}.
 
 process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
