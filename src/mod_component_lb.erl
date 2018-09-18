@@ -11,7 +11,7 @@
 -include("mod_component_lb.hrl").
 
 %% API
--export([start_link/2, get_backends/1, get_frontend/1, start_ping/3]).
+-export([start_link/2, get_backends/1, start_ping/3]).
 
 %% gen_mod callbacks
 -export([start/2,
@@ -25,7 +25,6 @@
 -export([node_cleanup/2, unregister_subhost/2]).
 
 -record(state, {lb = #{},
-				backends = #{},
 				timers = maps:new(),
 				host}).
 
@@ -43,10 +42,6 @@ start_link(Host, Opts) ->
 
 get_backends(Domain) ->
 	mod_component_lb_dynamic:get_backends(Domain).
-
-get_frontend(Domain) ->
-	Proc = ?MODULE, %%gen_mod:get_module_proc(Host, ?PROCNAME),
-	gen_server:call(Proc, {frontend, Domain}).
 
 start_ping(Host, Node, JID) when JID#jid.lresource =:= <<>> ->
 	?INFO_MSG("start_ping: ~p, ~p, ~p", [Host, Node, JID]),
@@ -99,9 +94,6 @@ start(Host, Opts) ->
 stop(Host) ->
 	?INFO_MSG("stop", []),
     Proc = gen_mod:get_module_proc(Host, ?MODULE),
-    %% Pid = erlang:whereis(Proc),
-    %% gen_server:call(Proc, stop),
-    %% wait_for_process_to_stop(Pid),
     ejabberd_sup:stop_child(Proc).
 
 %%====================================================================
@@ -124,12 +116,15 @@ init([Host, Opts]) ->
 	ejabberd_hooks:add(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
 	{ok, State1}.
 
-handle_call({frontend, Domain}, _From, #state{backends = Backends} = State) ->
-	%% ?DEBUG("frontends for ~p", [Domain]),
-	{reply, maps:find(Domain, Backends), State}.
-%% handle_call(stop, _From, State) ->
-%% 	?INFO_MSG("stop"),
-%% 	{stop, normal, ok, State}.
+handle_call(Request, From, State) ->
+	?WARNING_MSG("Unexpected gen_server call: ~p", [[Request, From, State]]),
+	{reply, error, State}.
+%% handle_call({frontend, Domain}, _From, #state{backends = Backends} = State) ->
+%% 	%% ?DEBUG("frontends for ~p", [Domain]),
+%% 	{reply, maps:find(Domain, Backends), State}.
+%% %% handle_call(stop, _From, State) ->
+%% %% 	?INFO_MSG("stop"),
+%% %% 	{stop, normal, ok, State}.
 
 handle_cast({start_ping, JID}, State) ->
     Timers = add_timer(JID, ?PING_INTERVAL, State#state.timers),
@@ -229,23 +224,16 @@ process_lb_opt({LBDomain, Backends}, #state{lb = LBDomains} = State)
     LBDomainBin = list_to_binary(LBDomain),
 	BackendsBin = lists:map(fun erlang:list_to_binary/1, Backends),
 	LBDomains1  = LBDomains#{LBDomainBin => BackendsBin},
-	State1 = process_lb_backends(LBDomainBin, BackendsBin, State#state{lb = LBDomains1}),
+	State1      = State#state{lb = LBDomains1},
 	?INFO_MSG("lb opt state: ~p", [State1]),
 	State1;
 process_lb_opt(Opt, State) ->
-	?ERROR_MSG("unknown lb opt: ~p", [Opt]),
-	State.
-
-process_lb_backends(LBDomain, [Backend|Backends], #state{backends = StateBackends} = State) ->
-	StateBackends1 = StateBackends#{Backend => LBDomain},
-	State1 = State#state{backends = StateBackends1},
-	process_lb_backends(LBDomain, Backends, State1);
-process_lb_backends(_LBDomain, [], State) ->
+	?WARNING_MSG("unknown lb opt: ~p", [Opt]),
 	State.
 
 compile_frontends(Frontends) ->
     Source = mod_component_lb_dynamic_src(Frontends),
-	?INFO_MSG("dynamic src: ~p", [Source]),
+	?INFO_MSG("dynamic src: ~s", [Source]),
     {Module, Code} = dynamic_compile:from_string(Source),
     code:load_binary(Module, "mod_component_lb_dynamic.erl", Code),
     ok.
