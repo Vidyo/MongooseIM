@@ -41,8 +41,7 @@ start_link(Host, Opts) ->
     %% gen_server:start_link({local, Proc}, ?MODULE, [Host, Opts], []).
 
 get_backends(Domain) ->
-	Proc = ?MODULE, %%gen_mod:get_module_proc(Host, ?PROCNAME),
-	gen_server:call(Proc, {backends, Domain}).
+	mod_component_lb_dynamic:get_backends(Domain).
 
 get_frontend(Domain) ->
 	Proc = ?MODULE, %%gen_mod:get_module_proc(Host, ?PROCNAME),
@@ -112,13 +111,11 @@ init([Host, Opts]) ->
 						 {index, [#component_lb.backend]},
 						 {attributes, record_info(fields, component_lb)}]),
 	mnesia:add_table_copy(key, node(), ram_copies),
+	compile_frontends(State1#state.lb),
 	ejabberd_hooks:add(node_cleanup, global, ?MODULE, node_cleanup, 90),
 	ejabberd_hooks:add(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
 	{ok, State1}.
 
-handle_call({backends, Domain}, _From, #state{lb = Frontends} = State) ->
-	%% ?DEBUG("backends for ~p in ~p", [Domain, Frontends]),
-	{reply, maps:find(Domain, Frontends), State};
 handle_call({frontend, Domain}, _From, #state{backends = Backends} = State) ->
 	%% ?DEBUG("frontends for ~p", [Domain]),
 	{reply, maps:find(Domain, Backends), State}.
@@ -167,3 +164,18 @@ process_lb_backends(LBDomain, [Backend|Backends], #state{backends = StateBackend
 	process_lb_backends(LBDomain, Backends, State1);
 process_lb_backends(LBDomain, [], State) ->
 	State.
+
+compile_frontends(Frontends) ->
+    Source = mod_component_lb_dynamic_src(Frontends),
+	?INFO_MSG("dynamic src: ~p", [Source]),
+    {Module, Code} = dynamic_compile:from_string(Source),
+    code:load_binary(Module, "mod_component_lb_dynamic.erl", Code),
+    ok.
+
+mod_component_lb_dynamic_src(Frontends) ->
+    lists:flatten(
+        ["-module(mod_component_lb_dynamic).
+         -export([get_backends/1]).
+
+         get_backends(Domain) ->
+             ", io_lib:format("maps:find(Domain, ~p)", [Frontends]), ".\n"]).
