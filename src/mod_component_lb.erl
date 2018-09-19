@@ -31,6 +31,7 @@
 -define(lookup_key(LUser, LServer), {LUser, LServer}).
 -define(PING_INTERVAL, 5000).
 -define(PING_REQ_TIMEOUT, ?PING_INTERVAL div 2).
+-define(TX_RETRIES, 2).
 
 %%====================================================================
 %% API
@@ -250,25 +251,37 @@ lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = To)
 		[#component_lb{key = Key, backend = Domain, handler = Handler, node = Node}] ->
 			?INFO_MSG("found backend in mnesia: ~p => ~p", [Key, {Domain, Handler}]),
 			{Domain, Handler, Node};
-			%% mongoose_local_delivery:do_route(From, To, Acc, Packet, LServer, Handler),
-			%% done;
 		[] ->
 			case get_random_backend(Backends, LUser) of
 				{Domain, Handler, Node} ->
-					Record = #component_lb{key=Key, backend=Domain, handler=Handler, node=Node},
-					{atomic, _} = mnesia:transaction(fun () -> mnesia:write(Record) end),
-					?INFO_MSG("inserted backend to mnesia: ~p => ~p", [Key, Record]),
-					JID = jid:make(LUser, LServer, <<>>),
-					start_ping(ok, Node, JID),
-					{Domain, Handler, Node};
-					%% mongoose_local_delivery:do_route(From, To, Acc, Packet, LServer, Handler),
-					%% done;
+					write_record(Key, Domain, Handler, Node);
 				[] ->
 					[]
 			end;
 		Any ->
 			?ERROR_MSG("Unexpected mnesia lookup result: ~p", [Any]),
 			error
+	end.
+
+write_record({LUser, LServer} = Key, Domain, Handler, Node) ->
+	R = #component_lb{key=Key, backend=Domain, handler=Handler, node=Node},
+	F = fun() ->
+				case mnesia:read(component_lb, Key) of
+					[] ->
+						mnesia:write(R),
+						R;
+					[R1] ->
+						mnesia:abort(R1) %% somebody else added the record
+				end
+		end,
+	case mnesia:transaction(F, ?TX_RETRIES) of
+		{atomic, R} ->
+			?INFO_MSG("inserted backend to mnesia: ~p => ~p", [Key, R]),
+			JID = jid:make(LUser, LServer, <<>>),
+			start_ping(ok, Node, JID),
+			{Domain, Handler, Node};
+		{aborted, #component_lb{backend = Domain1, handler = Handler1, node = Node1}} ->
+			{Domain1, Handler1, Node1}
 	end.
 
 get_random_backend(Backends, LUser) ->
