@@ -135,11 +135,11 @@ handle_cast({start_ping, JID}, State) ->
     {noreply, State#state{timers = Timers}};
 
 handle_cast({iq_pong, JID, timeout}, State) ->
-	?INFO_MSG("backend ping timeout on ~p", [JID]),
+	?WARNING_MSG("backend ping timeout on ~p", [JID]),
 	State1 = delete_record(JID, State),
 	{noreply, State1};
 handle_cast({iq_pong, JID, #iq{type = error} = Response}, State) ->
-	?INFO_MSG("backend ping error response on ~p: ~p", [JID, Response]),
+	?WARNING_MSG("backend ping error response on ~p: ~p", [JID, Response]),
 	State1 = delete_record(JID, State),
 	{noreply, State1};
 handle_cast({iq_pong, _JID, _Response}, State) ->
