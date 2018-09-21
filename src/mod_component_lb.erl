@@ -44,9 +44,7 @@ start_link(Host, Opts) ->
 lookup_backend(From, #jid{lserver = LServer} = To) ->
 	case get_backends(LServer) of
 		error ->
-			?DEBUG("backend not found for ~p", [LServer]),
-			[];
-			%% {From, To, Acc, Packet};
+			notfound;
 		{ok, Backends} ->
 			lookup_backend(Backends, From, To)
 	end.
@@ -54,31 +52,16 @@ lookup_backend(From, #jid{lserver = LServer} = To) ->
 %%====================================================================
 %% Hooks callbacks
 %%====================================================================
-
 node_cleanup(Acc, Node) ->
 	?INFO_MSG("component_lb node_cleanup for ~p", [Node]),
 	{node, Backend} = Node,
-	delete_backend(Backend),
+	delete_backend(Backend), %% TODO: What's Backend here? Probably not an LDomain...
 	Acc.
 
 unregister_subhost(Acc, LDomain) ->
 	?INFO_MSG("component_lb unregister_subhost for ~p", [LDomain]),
 	delete_backend(LDomain),
 	Acc.
-
-delete_backend(Backend) ->
-	F = fun() ->
-				mnesia:lock({table, component_lb}, write),
-                Keys = mnesia:dirty_select(
-                         component_lb,
-                         [{#component_lb{backend = '$1',  key = '$2', _ = '_'},
-                           [{'==', '$1', Backend}],
-                           ['$2']}]),
-                lists:foreach(fun(Key) ->
-                                      mnesia:delete({component_lb, Key})
-                              end, Keys)
-        end,
-    {atomic, _} = mnesia:transaction(F).
 
 %% mnesia:dirty_select(component_lb, [{#component_lb{backend = '$1',  key = '$2', _ = '_'}, [{'==', '$1', Backend}], ['$2']}])
 
@@ -107,29 +90,25 @@ stop(Host) ->
 %% -spec init(Args :: list()) -> {ok, state()}.
 init([Host, Opts]) ->
 	?INFO_MSG("~p: ~p", [Host, Opts]),
-	State = #state{host = Host},
-	State1 = process_opts(Opts, State),
-	?INFO_MSG("LB State: ~p", [State1]),
+	State = process_opts(Opts, #state{host = Host}),
+	?INFO_MSG("LB State: ~p", [State]),
     mnesia:create_table(component_lb,
                         [{ram_copies, [node()]},
                          {type, set},
 						 {index, [#component_lb.backend]},
 						 {attributes, record_info(fields, component_lb)}]),
 	mnesia:add_table_copy(key, node(), ram_copies),
-	compile_frontends(State1#state.lb),
+	compile_frontends(State#state.lb),
 	ejabberd_hooks:add(node_cleanup, global, ?MODULE, node_cleanup, 90),
 	ejabberd_hooks:add(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
-	{ok, State1}.
+	{ok, State}.
 
 handle_call(Request, From, State) ->
 	?WARNING_MSG("Unexpected gen_server call: ~p", [[Request, From, State]]),
 	{reply, error, State}.
-%% handle_call({frontend, Domain}, _From, #state{backends = Backends} = State) ->
-%% 	%% ?DEBUG("frontends for ~p", [Domain]),
-%% 	{reply, maps:find(Domain, Backends), State}.
-%% %% handle_call(stop, _From, State) ->
-%% %% 	?INFO_MSG("stop"),
-%% %% 	{stop, normal, ok, State}.
+%% handle_call(stop, _From, State) ->
+%% 	?INFO_MSG("stop"),
+%% 	{stop, normal, ok, State}.
 
 handle_cast({start_ping, JID}, State) ->
     Timers = add_timer(JID, ?PING_INTERVAL, State#state.timers),
@@ -182,13 +161,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
-
 start_ping(Host, Node, JID) when JID#jid.lresource =:= <<>> ->
 	?INFO_MSG("start_ping: ~p, ~p, ~p", [Host, Node, JID]),
 	gen_server:cast({?MODULE, Node}, {start_ping, JID}).
-
-%% stop_ping(Host, JID) ->
-%%     gen_server:cast(?MODULE, {stop_ping, JID}).
 
 add_timer(JID, Interval, Timers) ->
     LJID = jid:to_lower(JID),
@@ -231,8 +206,8 @@ delete_record(#jid{luser = LUser, lserver = LServer} = JID, State) ->
 	{atomic, _} = mnesia:transaction(fun () -> mnesia:delete({component_lb, Key}) end),
     State#state{timers = Timers}.
 
-get_backends(Domain) ->
-	mod_component_lb_dynamic:get_backends(Domain).
+get_backends(Frontend) ->
+	mod_component_lb_dynamic:get_backends(Frontend).
 
 lookup_backend(Backends, From, #jid{luser = LUser} = To) ->
 	case LUser of
@@ -255,11 +230,11 @@ lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = To)
 			case get_random_backend(Backends, LUser) of
 				{Domain, Handler, Node} ->
 					write_record(Key, Domain, Handler, Node);
-				[] ->
-					[]
+				notfound ->
+					notfound
 			end;
 		Any ->
-			?ERROR_MSG("Unexpected mnesia lookup result: ~p", [Any]),
+			?ERROR_MSG("Unexpected component_lb lookup result: ~p", [Any]),
 			error
 	end.
 
@@ -271,7 +246,7 @@ write_record({LUser, LServer} = Key, Domain, Handler, Node) ->
 						mnesia:write(R),
 						R;
 					[R1] ->
-						mnesia:abort(R1) %% somebody else added the record
+						mnesia:abort(R1) %% somebody else has added the record, just use it
 				end
 		end,
 	case mnesia:transaction(F, ?TX_RETRIES) of
@@ -286,10 +261,12 @@ write_record({LUser, LServer} = Key, Domain, Handler, Node) ->
 
 get_random_backend(Backends, LUser) ->
 	Backends1 = lists:map(fun ejabberd_router:lookup_component/1, Backends),
-	ActiveBackends = lists:filter(fun(Backend) -> Backend /= [] end,
-								  Backends1),
+    ActiveBackends = lists:filter(fun(Backend) ->
+                                          Backend /= []
+                                  end,
+                                  Backends1),
 	case ActiveBackends of
-		[] -> [];
+		[] -> notfound;
 		_  ->
 			N = erlang:phash2(LUser, length(ActiveBackends)),
 			% external_component_global stores a list for god knows what reason;
@@ -298,6 +275,20 @@ get_random_backend(Backends, LUser) ->
 			#external_component{domain = Domain, handler = Handler, node = Node} = Backend,
 			{Domain, Handler, Node}
 	end.
+
+delete_backend(Backend) ->
+	F = fun() ->
+                mnesia:lock({table, component_lb}, write),
+                Keys = mnesia:dirty_select(
+                         component_lb,
+                         [{#component_lb{backend = '$1',  key = '$2', _ = '_'},
+                           [{'==', '$1', Backend}],
+                           ['$2']}]),
+                lists:foreach(fun(Key) ->
+                                      mnesia:delete({component_lb, Key})
+                              end, Keys)
+        end,
+    {atomic, _} = mnesia:transaction(F).
 
 process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
@@ -323,7 +314,6 @@ process_lb_opt(Opt, State) ->
 
 compile_frontends(Frontends) ->
     Source = mod_component_lb_dynamic_src(Frontends),
-	?INFO_MSG("dynamic src: ~s", [Source]),
     {Module, Code} = dynamic_compile:from_string(Source),
     code:load_binary(Module, "mod_component_lb_dynamic.erl", Code),
     ok.
