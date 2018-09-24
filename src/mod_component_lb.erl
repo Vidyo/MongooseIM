@@ -28,6 +28,10 @@
 				host}).
 -record(component_lb, {key, backend, handler, node}).
 
+-type state() :: #state{}.
+-type component_lb() :: #component_lb{}.
+-type timers() :: #{jid:jid() := {reference(), component_lb()}}.
+
 -define(lookup_key(LUser, LServer), {LUser, LServer}).
 -define(PING_INTERVAL, 5000).
 -define(PING_REQ_TIMEOUT, ?PING_INTERVAL div 2).
@@ -41,6 +45,7 @@ start_link(Host, Opts) ->
 	?INFO_MSG("start_link: host ~p, proc ~p", [Host, Proc]),
     gen_server:start_link({local, Proc}, ?MODULE, [Host, Opts], []).
 
+-spec lookup_backend(From :: jid:jid(), To :: jid:jid()) -> binary() | notfound.
 lookup_backend(From, #jid{lserver = LServer} = To) ->
 	case get_backends(LServer) of
 		error ->
@@ -87,7 +92,7 @@ stop(Host) ->
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
-%% -spec init(Args :: list()) -> {ok, state()}.
+-spec init(Args :: list()) -> {ok, state()}.
 init([Host, Opts]) ->
 	?INFO_MSG("~p: ~p", [Host, Opts]),
 	State = process_opts(Opts, #state{host = Host}),
@@ -110,40 +115,41 @@ handle_call(Request, From, State) ->
 %% 	?INFO_MSG("stop"),
 %% 	{stop, normal, ok, State}.
 
-handle_cast({start_ping, JID}, State) ->
-    Timers = add_timer(JID, ?PING_INTERVAL, State#state.timers),
+handle_cast({start_ping, JID, Record}, State) ->
+    Timers = add_timer(JID, Record, ?PING_INTERVAL, State#state.timers),
     {noreply, State#state{timers = Timers}};
 
-handle_cast({iq_pong, JID, timeout}, State) ->
+handle_cast({iq_pong, JID, Record, timeout}, State) ->
 	?WARNING_MSG("backend ping timeout on ~p", [JID]),
-	State1 = delete_record(JID, State),
+	State1 = delete_record(JID, Record, State),
 	{noreply, State1};
-handle_cast({iq_pong, JID, #iq{type = error} = Response}, State) ->
+handle_cast({iq_pong, JID, Record, #iq{type = error} = Response}, State) ->
 	?WARNING_MSG("backend ping error response on ~p: ~p", [JID, Response]),
-	State1 = delete_record(JID, State),
+	State1 = delete_record(JID, Record, State),
 	{noreply, State1};
-handle_cast({iq_pong, _JID, _Response}, State) ->
+handle_cast({iq_pong, _Record, _JID, _Response}, State) ->
 	{noreply, State};
 
 handle_cast(Request, State) ->
 	?INFO_MSG("handle_cast: ~p, ~p", [Request, State]),
 	{noreply, State}.
 
-handle_info({timeout, _TRef, {ping, JID}}, State) ->
+handle_info({timeout, _TRef, {ping, JID, Record}}, State) ->
 	?INFO_MSG("Sending ping disco to ~p", [JID]),
     IQ = #iq{type = get,
              sub_el = [#xmlel{name = <<"query">>,
                               attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
     Pid = self(),
     F = fun(_From, _To, Acc, Response) ->
-                gen_server:cast(Pid, {iq_pong, JID, Response}),
+                gen_server:cast(Pid, {iq_pong, JID, Record, Response}),
                 Acc
         end,
     From = jid:make(<<"">>, State#state.host, <<"">>),
     Acc = mongoose_acc:from_element(IQ, From, JID),
 	?INFO_MSG("Routing ping disco to ~p", [JID]),
+    %% !!!!!! TODO: this cause re-insertion of the record if backend failed !!!
     ejabberd_local:route_iq(From, JID, Acc, IQ, F, ?PING_REQ_TIMEOUT),
-	Timers = add_timer(JID, ?PING_INTERVAL, State#state.timers),
+	Timers = add_timer(JID, Record, ?PING_INTERVAL, State#state.timers),
     {noreply, State#state{timers = Timers}};
 handle_info(Info, State) ->
 	?INFO_MSG("handle_info: ~p", [Info]),
@@ -161,32 +167,40 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
-start_ping(Host, Node, JID) when JID#jid.lresource =:= <<>> ->
-	?INFO_MSG("start_ping: ~p, ~p, ~p", [Host, Node, JID]),
-	gen_server:cast({?MODULE, Node}, {start_ping, JID}).
+-spec start_ping(Node :: node(), JID :: jid:jid(), Record :: component_lb()) -> ok.
+start_ping(Node, JID, Record) when JID#jid.lresource =:= <<>> ->
+	?INFO_MSG("start_ping: ~p, ~p", [Node, JID]),
+	gen_server:cast({?MODULE, Node}, {start_ping, JID, Record}).
 
-add_timer(JID, Interval, Timers) ->
-    LJID = jid:to_lower(JID),
-    NewTimers = case maps:find(LJID, Timers) of
-                    {ok, OldTRef} ->
+-spec add_timer(JID :: jid:jid(), Record :: component_lb(),
+                Interval :: non_neg_integer(), Timers :: timers()) -> timers().
+add_timer(JID, Record, Interval, Timers) ->
+    NewTimers = case maps:find(JID, Timers) of
+                    {ok, {OldTRef, Record}} ->
                         cancel_timer(OldTRef),
-                        maps:remove(LJID, Timers);
+                        maps:remove(JID, Timers);
+                    {ok, {OldTRef, OldRecord}} ->
+                        ?WARNING_MSG("Ovewriting existing backend timer ~p with ~p; this is weird",
+                                     [OldRecord, Record]),
+                        cancel_timer(OldTRef),
+                        maps:remove(JID, Timers);
                     _ ->
                         Timers
                 end,
-    TRef = erlang:start_timer(Interval, self(), {ping, JID}),
-    maps:put(LJID, TRef, NewTimers).
+    TRef = erlang:start_timer(Interval, self(), {ping, JID, Record}),
+    maps:put(JID, {TRef, Record}, NewTimers).
 
+-spec del_timer(JID :: jid:jid(), Timers :: timers()) -> timers().
 del_timer(JID, Timers) ->
-    LJID = jid:to_lower(JID),
-    case maps:find(LJID, Timers) of
-        {ok, TRef} ->
+    case maps:find(JID, Timers) of
+        {ok, {TRef, Record}} ->
             cancel_timer(TRef),
-            maps:remove(LJID, Timers);
+            maps:remove(JID, Timers);
         _ ->
             Timers
     end.
 
+-spec cancel_timer(reference()) -> ok.
 cancel_timer(TRef) ->
     case erlang:cancel_timer(TRef) of
         false ->
@@ -200,15 +214,20 @@ cancel_timer(TRef) ->
             ok
     end.
 
-delete_record(#jid{luser = LUser, lserver = LServer} = JID, State) ->
-	Timers = del_timer(JID, State#state.timers),
-	Key = ?lookup_key(LUser, LServer),
-	{atomic, _} = mnesia:transaction(fun () -> mnesia:delete({component_lb, Key}) end),
+-spec delete_record(JID :: jid:jid(), component_lb(), state()) -> state().
+delete_record(#jid{luser = LUser, lserver = LServer} = JID, Record, State) ->
+    Timers = del_timer(JID, State#state.timers),
+    case mnesia:transaction(fun () -> mnesia:delete(Record) end) of
+        {atomic, _} -> ok;
+        {aborted, Reason} -> ?WARNING_MSG("Error deleting ~p: ~p", [Record, Reason])
+    end,
     State#state{timers = Timers}.
 
+-spec get_backends(Frontend :: binary()) -> {ok, list()} | error.
 get_backends(Frontend) ->
 	mod_component_lb_dynamic:get_backends(Frontend).
 
+-spec lookup_backend(Backends :: [binary()], From :: jid:jid(), To :: jid:jid()) -> binary() | notfound.
 lookup_backend(Backends, From, #jid{luser = LUser} = To) ->
 	case LUser of
 		<<"">> ->
@@ -252,13 +271,15 @@ write_record({LUser, LServer} = Key, Domain, Handler, Node) ->
 	case mnesia:transaction(F, ?TX_RETRIES) of
 		{atomic, R} ->
 			?INFO_MSG("inserted backend to mnesia: ~p => ~p", [Key, R]),
-			JID = jid:make(LUser, LServer, <<>>),
-			start_ping(ok, Node, JID),
+			JID = jid:make(LUser, LServer, <<>>), %% we want to go to Domain directly!!
+			start_ping(Node, JID, R),
 			{Domain, Handler, Node};
 		{aborted, #component_lb{backend = Domain1, handler = Handler1, node = Node1}} ->
 			{Domain1, Handler1, Node1}
 	end.
 
+-spec get_random_backend(Backends :: [binary()], LUser :: binary()) ->
+                                {Domain :: binary(), Handler :: any(), Node :: node()} | notfound.
 get_random_backend(Backends, LUser) ->
 	Backends1 = lists:map(fun ejabberd_router:lookup_component/1, Backends),
     ActiveBackends = lists:filter(fun(Backend) ->
@@ -276,6 +297,7 @@ get_random_backend(Backends, LUser) ->
 			{Domain, Handler, Node}
 	end.
 
+-spec delete_backend(Backend :: binary()) -> ok.
 delete_backend(Backend) ->
 	F = fun() ->
                 mnesia:lock({table, component_lb}, write),
@@ -288,7 +310,8 @@ delete_backend(Backend) ->
                                       mnesia:delete({component_lb, Key})
                               end, Keys)
         end,
-    {atomic, _} = mnesia:transaction(F).
+    {atomic, _} = mnesia:transaction(F),
+    ok.
 
 process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
