@@ -100,13 +100,14 @@ init([Host, Opts]) ->
     mnesia:create_table(component_lb,
                         [{ram_copies, [node()]},
                          {type, set},
-						 {index, [#component_lb.backend]},
+						 {index, [#component_lb.backend, #component_lb.node]},
 						 {attributes, record_info(fields, component_lb)}]),
 	mnesia:add_table_copy(key, node(), ram_copies),
 	compile_frontends(State#state.lb),
+	State1 = reload(State),
 	ejabberd_hooks:add(node_cleanup, global, ?MODULE, node_cleanup, 90),
 	ejabberd_hooks:add(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
-	{ok, State}.
+	{ok, State1}.
 
 handle_call(Request, From, State) ->
 	?WARNING_MSG("Unexpected gen_server call: ~p", [[Request, From, State]]),
@@ -358,3 +359,28 @@ mod_component_lb_dynamic_src(Frontends) ->
 
          get_backends(Domain) ->
              ", io_lib:format("maps:find(Domain, ~p)", [Frontends]), ".\n"]).
+
+-spec reload(State :: state()) -> ok.
+reload(State) ->
+    %% TODO: iterate instead of grabbing all records in one go
+    Records = mnesia:dirty_select(
+                component_lb,
+                [{#component_lb{node = '$1', key = '$2', _ = '_'},
+                  [{'==', '$1', node()}],
+                  ['$_']}]),
+    Acc = State,
+    lists:foldl(fun(Record, State) ->
+                        reload(Record, State)
+                end, Acc, Records).
+
+-spec reload(Record :: component_lb(), State :: state()) -> ok.
+reload(#component_lb{key = {LUser, LServer}} = Record, #state{timers = Timers} = State) ->
+    JID = jid:make(LUser, LServer, <<>>),
+    case maps:find(JID, Timers) of
+        {ok, {_TRef, Record}} ->
+            Timers1 = Timers;
+        _ ->
+            Interval = rand:uniform(?PING_INTERVAL),
+            Timers1 = add_timer(JID, Record, Interval, Timers)
+    end,
+    State#state{timers = Timers1}.
