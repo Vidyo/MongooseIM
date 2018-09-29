@@ -2,7 +2,7 @@
 -author('igor.slepchin@gmail.com').
 
 -behavior(gen_server).
--behaviour(gen_mod).
+-behavior(gen_mod).
 
 -include("mongoose.hrl").
 -include("mongoose_ns.hrl").
@@ -134,23 +134,18 @@ handle_cast(Request, State) ->
 	?INFO_MSG("handle_cast: ~p, ~p", [Request, State]),
 	{noreply, State}.
 
-handle_info({timeout, _TRef, {ping, JID, Record}}, State) ->
-	?INFO_MSG("Sending ping disco to ~p", [JID]),
-    IQ = #iq{type = get,
-             sub_el = [#xmlel{name = <<"query">>,
-                              attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
-    Pid = self(),
-    F = fun(_From, _To, Acc, Response) ->
-                gen_server:cast(Pid, {iq_pong, JID, Record, Response}),
-                Acc
-        end,
-    From = jid:make(<<"">>, State#state.host, <<"">>),
-    Acc = mongoose_acc:from_element(IQ, From, JID),
-	?INFO_MSG("Routing ping disco to ~p", [JID]),
-    %% !!!!!! TODO: this cause re-insertion of the record if backend failed !!!
-    ejabberd_local:route_iq(From, JID, Acc, IQ, F, ?PING_REQ_TIMEOUT),
-	Timers = add_timer(JID, Record, ?PING_INTERVAL, State#state.timers),
-    {noreply, State#state{timers = Timers}};
+handle_info({timeout, _TRef, {ping, #jid{luser = LUser, lserver = LServer} = JID, Record}}, State) ->
+    Key = ?lookup_key(LUser, LServer),
+    case mnesia:dirty_read(component_lb, Key) of
+        [Record] ->
+            send_ping(State#state.host, JID, Record),
+            Timers = add_timer(JID, Record, ?PING_INTERVAL, State#state.timers);
+        NewRecord ->
+            ?WARNING_MSG("Record changed before ping: ~p to ~p", [Record, NewRecord]),
+            Timers = del_timer(JID, Record, State#state.timers)
+    end,
+    State1 = State#state{timers = Timers},
+    {noreply, State1};
 handle_info(Info, State) ->
 	?INFO_MSG("handle_info: ~p", [Info]),
     {noreply, State}.
@@ -172,6 +167,21 @@ start_ping(Node, JID, Record) when JID#jid.lresource =:= <<>> ->
 	?INFO_MSG("start_ping: ~p, ~p", [Node, JID]),
 	gen_server:cast({?MODULE, Node}, {start_ping, JID, Record}).
 
+-spec send_ping(Host::any, JID :: jid:jid(), Record :: component_lb()) -> mongoose_acc:t().
+send_ping(Host, JID, Record) ->
+    ?INFO_MSG("Sending ping disco to ~p", [JID]),
+    IQ = #iq{type = get,
+             sub_el = [#xmlel{name = <<"query">>,
+                              attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
+    Pid = self(),
+    F = fun(_From, _To, Acc, Response) ->
+                gen_server:cast(Pid, {iq_pong, JID, Record, Response}),
+                Acc
+        end,
+    From = jid:make(<<"">>, Host, <<"">>),
+    Acc = mongoose_acc:from_element(IQ, From, JID),
+    ejabberd_local:route_iq(From, JID, Acc, IQ, F, ?PING_REQ_TIMEOUT).
+
 -spec add_timer(JID :: jid:jid(), Record :: component_lb(),
                 Interval :: non_neg_integer(), Timers :: timers()) -> timers().
 add_timer(JID, Record, Interval, Timers) ->
@@ -180,7 +190,7 @@ add_timer(JID, Record, Interval, Timers) ->
                         cancel_timer(OldTRef),
                         maps:remove(JID, Timers);
                     {ok, {OldTRef, OldRecord}} ->
-                        ?WARNING_MSG("Ovewriting existing backend timer ~p with ~p; this is weird",
+                        ?WARNING_MSG("Overwriting existing backend timer ~p with ~p; this is weird",
                                      [OldRecord, Record]),
                         cancel_timer(OldTRef),
                         maps:remove(JID, Timers);
@@ -190,8 +200,8 @@ add_timer(JID, Record, Interval, Timers) ->
     TRef = erlang:start_timer(Interval, self(), {ping, JID, Record}),
     maps:put(JID, {TRef, Record}, NewTimers).
 
--spec del_timer(JID :: jid:jid(), Timers :: timers()) -> timers().
-del_timer(JID, Timers) ->
+-spec del_timer(JID :: jid:jid(), Record :: component_lb(), Timers :: timers()) -> timers().
+del_timer(JID, Record, Timers) ->
     case maps:find(JID, Timers) of
         {ok, {TRef, Record}} ->
             cancel_timer(TRef),
@@ -216,8 +226,8 @@ cancel_timer(TRef) ->
 
 -spec delete_record(JID :: jid:jid(), component_lb(), state()) -> state().
 delete_record(#jid{luser = LUser, lserver = LServer} = JID, Record, State) ->
-    Timers = del_timer(JID, State#state.timers),
-    case mnesia:transaction(fun () -> mnesia:delete(Record) end) of
+    Timers = del_timer(JID, Record, State#state.timers),
+    case mnesia:transaction(fun () -> mnesia:delete_object(Record) end) of
         {atomic, _} -> ok;
         {aborted, Reason} -> ?WARNING_MSG("Error deleting ~p: ~p", [Record, Reason])
     end,
