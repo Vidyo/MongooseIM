@@ -146,14 +146,16 @@ handle_info({timeout, _TRef, {ping, #jid{luser = LUser, lserver = LServer} = JID
     end,
     State1 = State#state{timers = Timers},
     {noreply, State1};
+
 handle_info(Info, State) ->
 	?INFO_MSG("handle_info: ~p", [Info]),
     {noreply, State}.
 
 terminate(_Reason, #state{host = Host} = State) ->
-	?INFO_MSG("mod_component_lb:terminate", []),
+    ?INFO_MSG("mod_component_lb:terminate", []),
     ejabberd_hooks:delete(node_cleanup, global, ?MODULE, node_cleanup, 90),
-	ejabberd_hooks:delete(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
+    ejabberd_hooks:delete(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
+    delete_node(node()),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
