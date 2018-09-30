@@ -170,7 +170,7 @@ start_ping(Node, JID, Record) when JID#jid.lresource =:= <<>> ->
 	?INFO_MSG("start_ping: ~p, ~p", [Node, JID]),
 	gen_server:cast({?MODULE, Node}, {start_ping, JID, Record}).
 
--spec send_ping(Host::any, JID :: jid:jid(), Record :: component_lb()) -> mongoose_acc:t().
+-spec send_ping(Host::binary(), JID :: jid:jid(), Record :: component_lb()) -> mongoose_acc:t().
 send_ping(Host, JID, Record) ->
     ?INFO_MSG("Sending ping disco to ~p", [JID]),
     IQ = #iq{type = get,
@@ -377,7 +377,7 @@ mod_component_lb_dynamic_src(Frontends) ->
          get_backends(Domain) ->
              ", io_lib:format("maps:find(Domain, ~p)", [Frontends]), ".\n"]).
 
--spec reload(State :: state()) -> ok.
+-spec reload(State :: state()) -> state().
 reload(State) ->
     %% TODO: iterate instead of grabbing all records in one go
     Records = mnesia:dirty_select(
@@ -390,7 +390,7 @@ reload(State) ->
                         reload(Record, State)
                 end, Acc, Records).
 
--spec reload(Record :: component_lb(), State :: state()) -> ok.
+-spec reload(Record :: component_lb(), State :: state()) -> state().
 reload(#component_lb{key = {LUser, LServer}} = Record, #state{timers = Timers} = State) ->
     JID = jid:make(LUser, LServer, <<>>),
     case maps:find(JID, Timers) of
