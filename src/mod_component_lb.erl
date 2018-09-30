@@ -81,12 +81,13 @@ start(Host, Opts) ->
 	ChildSpec = #{id=>Proc, start=>{?MODULE, start_link, [Host, Opts]},
 				  restart=>transient, shutdown=>2000,
 				  type=>worker, modules=>[?MODULE]},
-    ejabberd_sup:start_child(ChildSpec).
+    {ok, _} = supervisor:start_child(ejabberd_sup, ChildSpec).
 
 stop(Host) ->
 	?INFO_MSG("stop", []),
     Proc = gen_mod:get_module_proc(Host, ?MODULE),
-    ejabberd_sup:stop_child(Proc).
+    supervisor:terminate_child(ejabberd_sup, Proc),
+    supervisor:delete_child(ejabberd_sup, Proc).
 
 %%====================================================================
 %% gen_server callbacks
@@ -176,9 +177,8 @@ send_ping(Host, JID, Record) ->
              sub_el = [#xmlel{name = <<"query">>,
                               attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
     Pid = self(),
-    F = fun(_From, _To, Acc, Response) ->
-                gen_server:cast(Pid, {iq_pong, JID, Record, Response}),
-                Acc
+    F = fun(Response) ->
+                gen_server:cast(Pid, {iq_pong, JID, Record, Response})
         end,
     From = jid:make(<<"">>, Host, <<"">>),
     Acc = mongoose_acc:from_element(IQ, From, JID),
