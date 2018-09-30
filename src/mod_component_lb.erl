@@ -59,8 +59,7 @@ lookup_backend(From, #jid{lserver = LServer} = To) ->
 %%====================================================================
 node_cleanup(Acc, Node) ->
 	?INFO_MSG("component_lb node_cleanup for ~p", [Node]),
-	{node, Backend} = Node,
-	delete_backend(Backend), %% TODO: What's Backend here? Probably not an LDomain...
+	delete_node(Node),
 	Acc.
 
 unregister_subhost(Acc, LDomain) ->
@@ -316,6 +315,22 @@ delete_backend(Backend) ->
                          component_lb,
                          [{#component_lb{backend = '$1',  key = '$2', _ = '_'},
                            [{'==', '$1', Backend}],
+                           ['$2']}]),
+                lists:foreach(fun(Key) ->
+                                      mnesia:delete({component_lb, Key})
+                              end, Keys)
+        end,
+    {atomic, _} = mnesia:transaction(F),
+    ok.
+
+-spec delete_node(Node :: node()) -> ok.
+delete_node(Node) ->
+	F = fun() ->
+                mnesia:lock({table, component_lb}, write),
+                Keys = mnesia:dirty_select(
+                         component_lb,
+                         [{#component_lb{node = '$1',  key = '$2', _ = '_'},
+                           [{'==', '$1', Node}],
                            ['$2']}]),
                 lists:foreach(fun(Key) ->
                                       mnesia:delete({component_lb, Key})
