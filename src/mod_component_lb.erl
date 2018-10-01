@@ -38,6 +38,7 @@
 -type state() :: #state{}.
 -type component_lb() :: #component_lb{}.
 -type timers() :: #{jid:jid() := {reference(), component_lb()}}.
+-type key() :: {LUser :: binary(), LServer :: binary()}.
 
 %%====================================================================
 %% API
@@ -243,9 +244,13 @@ lookup_backend(Backends, From, #jid{luser = LUser} = To) ->
 			lookup_backend_persistent(Backends, To)
 	end.
 
+-spec lookup_backend_transient(Backends :: [binary()], From :: jid:jid()) ->
+                                      {Domain :: binary(), Handler :: any(), Node :: node()} | notfound.
 lookup_backend_transient(Backends, #jid{luser = LUser} = _From) ->
 	get_random_backend(Backends, LUser).
 
+-spec lookup_backend_persistent(Backends :: [binary()], To :: jid:jid()) ->
+                                      {Domain :: binary(), Handler :: any(), Node :: node()} | notfound.
 lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = _To) ->
 	Key = ?lookup_key(LUser, LServer),
 	case mnesia:dirty_read(component_lb, Key) of
@@ -264,6 +269,8 @@ lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = _To
 			error
 	end.
 
+-spec write_record(Key :: key(), Domain :: binary(), Handler :: any(), Node :: node()) ->
+                          {Domain :: binary(), Handler :: any(), Node :: node()}.
 write_record({LUser, LServer} = Key, Domain, Handler, Node) ->
 	R = #component_lb{key=Key, backend=Domain, handler=Handler, node=Node},
 	F = fun() ->
