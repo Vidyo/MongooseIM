@@ -44,7 +44,7 @@
 %%====================================================================
 start_link(Host, Opts) ->
     Proc = ?MODULE,
-	?INFO_MSG("start_link: host ~p, proc ~p", [Host, Proc]),
+    ?INFO_MSG("event=start_link host=~p proc=~p", [Host, Proc]),
     gen_server:start_link({local, Proc}, ?MODULE, [Host, Opts], []).
 
 -spec lookup_backend(From :: jid:jid(), To :: jid:jid()) -> binary() | notfound.
@@ -60,12 +60,12 @@ lookup_backend(From, #jid{lserver = LServer} = To) ->
 %% Hooks callbacks
 %%====================================================================
 node_cleanup(Acc, Node) ->
-	?INFO_MSG("component_lb node_cleanup for ~p", [Node]),
+	?WARNING_MSG("event=node_cleanup node=~p", [Node]),
 	delete_node(Node),
 	Acc.
 
 unregister_subhost(Acc, LDomain) ->
-	?INFO_MSG("component_lb unregister_subhost for ~p", [LDomain]),
+	?WARNING_MSG("event=unregister_subhost subhost=~p", [LDomain]),
 	delete_backend(LDomain),
 	Acc.
 
@@ -73,7 +73,7 @@ unregister_subhost(Acc, LDomain) ->
 %% gen_mod callbacks
 %%====================================================================
 start(Host, Opts) ->
-	?INFO_MSG("start (~p, ~p)", [Host, Opts]),
+	?DEBUG("event=start host=~p opts=~p)", [Host, Opts]),
 	Proc = gen_mod:get_module_proc(Host, ?MODULE),
 	ChildSpec = #{id=>Proc, start=>{?MODULE, start_link, [Host, Opts]},
 				  restart=>transient, shutdown=>2000,
@@ -81,7 +81,7 @@ start(Host, Opts) ->
     {ok, _} = supervisor:start_child(ejabberd_sup, ChildSpec).
 
 stop(Host) ->
-	?INFO_MSG("stop", []),
+    ?DEBUG("event=stop", []),
     Proc = gen_mod:get_module_proc(Host, ?MODULE),
     supervisor:terminate_child(ejabberd_sup, Proc),
     supervisor:delete_child(ejabberd_sup, Proc).
@@ -91,9 +91,8 @@ stop(Host) ->
 %%====================================================================
 -spec init(Args :: list()) -> {ok, state()}.
 init([Host, Opts]) ->
-	?INFO_MSG("~p: ~p", [Host, Opts]),
-	State = process_opts(Opts, #state{host = Host}),
-	?INFO_MSG("LB State: ~p", [State]),
+    State = process_opts(Opts, #state{host = Host}),
+    ?INFO_MSG("event=init host=~p opts=~p state=~p", [Host, Opts, State]),
     mnesia:create_table(component_lb,
                         [{ram_copies, [node()]},
                          {type, set},
@@ -107,29 +106,26 @@ init([Host, Opts]) ->
 	{ok, State1}.
 
 handle_call(Request, From, State) ->
-	?WARNING_MSG("Unexpected gen_server call: ~p", [[Request, From, State]]),
+	?WARNING_MSG("event=handle_call_unexpected request=~p from=~p", [Request, From]),
 	{reply, error, State}.
-%% handle_call(stop, _From, State) ->
-%% 	?INFO_MSG("stop"),
-%% 	{stop, normal, ok, State}.
 
 handle_cast({start_ping, JID, Record}, State) ->
     Timers = add_timer(JID, Record, State#state.ping_interval, State#state.timers),
     {noreply, State#state{timers = Timers}};
 
 handle_cast({iq_pong, JID, Record, timeout}, State) ->
-	?WARNING_MSG("backend ping timeout on ~p", [JID]),
+	?WARNING_MSG("event=room_ping_timeout jid=~p", [JID]),
 	State1 = delete_record(JID, Record, State),
 	{noreply, State1};
 handle_cast({iq_pong, JID, Record, #iq{type = error} = Response}, State) ->
-	?WARNING_MSG("backend ping error response on ~p: ~p", [JID, Response]),
+	?INFO_MSG("event=room_ping_error jid=~p response=~p", [JID, Response]),
 	State1 = delete_record(JID, Record, State),
 	{noreply, State1};
 handle_cast({iq_pong, _Record, _JID, _Response}, State) ->
 	{noreply, State};
 
 handle_cast(Request, State) ->
-	?INFO_MSG("handle_cast: ~p, ~p", [Request, State]),
+	?WARNING_MSG("event=handle_cast_unexpected request=~p", [Request]),
 	{noreply, State}.
 
 handle_info({timeout, _TRef, {ping, #jid{luser = LUser, lserver = LServer} = JID, Record}}, State) ->
@@ -138,19 +134,21 @@ handle_info({timeout, _TRef, {ping, #jid{luser = LUser, lserver = LServer} = JID
         [Record] ->
             send_ping(JID, Record, State),
             Timers = add_timer(JID, Record, State#state.ping_interval, State#state.timers);
+        [] ->
+            Timers = del_timer(JID, Record, State#state.timers);
         NewRecord ->
-            ?WARNING_MSG("Record changed before ping: ~p to ~p", [Record, NewRecord]),
+            ?WARNING_MSG("event=room_ping_backend_record_changed from=~p to=~p", [Record, NewRecord]),
             Timers = del_timer(JID, Record, State#state.timers)
     end,
     State1 = State#state{timers = Timers},
     {noreply, State1};
 
 handle_info(Info, State) ->
-	?INFO_MSG("handle_info: ~p", [Info]),
+    ?WARNING_MSG("event=handle_cast_unexpected info=~p", [Info]),
     {noreply, State}.
 
 terminate(_Reason, #state{host = Host} = State) ->
-    ?INFO_MSG("mod_component_lb:terminate", []),
+    ?INFO_MSG("event=terminate", []),
     ejabberd_hooks:delete(node_cleanup, global, ?MODULE, node_cleanup, 90),
     ejabberd_hooks:delete(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
     delete_node(node()),
@@ -164,12 +162,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 -spec start_ping(Node :: node(), JID :: jid:jid(), Record :: component_lb()) -> ok.
 start_ping(Node, JID, Record) when JID#jid.lresource =:= <<>> ->
-	?INFO_MSG("start_ping: ~p, ~p", [Node, JID]),
+	?DEBUG("event=room_ping_start node=~p jid=~p", [Node, JID]),
 	gen_server:cast({?MODULE, Node}, {start_ping, JID, Record}).
 
 -spec send_ping(JID :: jid:jid(), Record :: component_lb(), State :: state()) -> mongoose_acc:t().
 send_ping(JID, Record, State) ->
-    ?INFO_MSG("Sending ping disco to ~p", [JID]),
+    ?DEBUG("event=room_ping_send jid=~p", [JID]),
     IQ = #iq{type = get,
              sub_el = [#xmlel{name = <<"query">>,
                               attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
@@ -189,7 +187,7 @@ add_timer(JID, Record, Interval, Timers) ->
                         cancel_timer(OldTRef),
                         maps:remove(JID, Timers);
                     {ok, {OldTRef, OldRecord}} ->
-                        ?WARNING_MSG("Overwriting existing backend timer ~p with ~p; this is weird",
+                        ?WARNING_MSG("event=room_ping_record_changed old=~p new=~p note=this_is_weird",
                                      [OldRecord, Record]),
                         cancel_timer(OldTRef),
                         maps:remove(JID, Timers);
@@ -228,7 +226,7 @@ delete_record(#jid{luser = LUser, lserver = LServer} = JID, Record, State) ->
     Timers = del_timer(JID, Record, State#state.timers),
     case mnesia:transaction(fun () -> mnesia:delete_object(Record) end) of
         {atomic, _} -> ok;
-        {aborted, Reason} -> ?WARNING_MSG("Error deleting ~p: ~p", [Record, Reason])
+        {aborted, Reason} -> ?WARNING_MSG("event=record_delete_error record=~p reason=~p", [Record, Reason])
     end,
     State#state{timers = Timers}.
 
@@ -252,7 +250,7 @@ lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = To)
 	Key = ?lookup_key(LUser, LServer),
 	case mnesia:dirty_read(component_lb, Key) of
 		[#component_lb{key = Key, backend = Domain, handler = Handler, node = Node}] ->
-			?INFO_MSG("found backend in mnesia: ~p => ~p", [Key, {Domain, Handler}]),
+			?DEBUG("event=record_found_backend key=~p handler=~p", [Key, {Domain, Handler}]),
 			{Domain, Handler, Node};
 		[] ->
 			case get_random_backend(Backends, LUser) of
@@ -262,7 +260,7 @@ lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = To)
 					notfound
 			end;
 		Any ->
-			?ERROR_MSG("Unexpected component_lb lookup result: ~p", [Any]),
+			?ERROR_MSG("event=record_lookup_error result=~p", [Any]),
 			error
 	end.
 
@@ -279,7 +277,7 @@ write_record({LUser, LServer} = Key, Domain, Handler, Node) ->
 		end,
 	case mnesia:transaction(F, ?TX_RETRIES) of
 		{atomic, R} ->
-			?INFO_MSG("inserted backend to mnesia: ~p => ~p", [Key, R]),
+			?DEBUG("event=record_insert key=~p record=~p", [Key, R]),
 			JID = jid:make(LUser, LServer, <<>>), %% we want to go to Domain directly!!
 			start_ping(Node, JID, R),
 			{Domain, Handler, Node};
@@ -350,22 +348,22 @@ process_opts([{ping_timeout, Value}|Opts], State) ->
     State1 = State#state{ping_timeout = Sec},
     process_opts(Opts, State1);
 process_opts([Opt|Opts], State) ->
-	?WARNING_MSG("unknown opt: ~p", [Opt]),
+	?WARNING_MSG("event=config_unknown_option option=~p", [Opt]),
 	process_opts(Opts, State);
 process_opts([], State) ->
 	State.
 
 process_lb_opt({Frontend, Backends}, #state{lb = LBDomains} = State)
   when is_list(Backends) ->
-	?INFO_MSG("lb opt: ~p => ~p", [Frontend, Backends]),
+	?INFO_MSG("event=config_lb_option frontend=~p backend=~p", [Frontend, Backends]),
     FrontendBin = list_to_binary(Frontend),
 	BackendsBin = lists:map(fun erlang:list_to_binary/1, Backends),
 	LBDomains1  = LBDomains#{FrontendBin => BackendsBin},
 	State1      = State#state{lb = LBDomains1},
-	?INFO_MSG("lb opt state: ~p", [State1]),
+	?INFO_MSG("event=config_lb_state state=~p", [State1]),
 	State1;
 process_lb_opt(Opt, State) ->
-	?WARNING_MSG("unknown lb opt: ~p", [Opt]),
+	?WARNING_MSG("event=config_unknown_lb_opttion option=~p", [Opt]),
 	State.
 
 compile_frontends(Frontends) ->
