@@ -10,6 +10,11 @@
 -include("jlib.hrl").
 -include("external_component.hrl").
 
+-define(lookup_key(LUser, LServer), {LUser, LServer}).
+-define(DEFAULT_PING_INTERVAL, timer:seconds(10*60)).
+-define(DEFAULT_PING_TIMEOUT, timer:seconds(20)).
+-define(TX_RETRIES, 2).
+
 %% API
 -export([start_link/2, lookup_backend/2]).
 
@@ -23,19 +28,16 @@
 %% Hooks callbacks
 -export([node_cleanup/2, unregister_subhost/2]).
 
--record(state, {lb = #{},
-				timers = maps:new(),
-				host}).
+-record(state, {lb = maps:new(),      %% frontend => backends map
+                timers = maps:new(),
+                ping_interval = ?DEFAULT_PING_INTERVAL,
+                ping_timeout = ?DEFAULT_PING_TIMEOUT,
+                host = <<"">>}).
 -record(component_lb, {key, backend, handler, node}).
 
 -type state() :: #state{}.
 -type component_lb() :: #component_lb{}.
 -type timers() :: #{jid:jid() := {reference(), component_lb()}}.
-
--define(lookup_key(LUser, LServer), {LUser, LServer}).
--define(PING_INTERVAL, 5000).
--define(PING_REQ_TIMEOUT, ?PING_INTERVAL div 2).
--define(TX_RETRIES, 2).
 
 %%====================================================================
 %% API
@@ -67,16 +69,11 @@ unregister_subhost(Acc, LDomain) ->
 	delete_backend(LDomain),
 	Acc.
 
-%% mnesia:dirty_select(component_lb, [{#component_lb{backend = '$1',  key = '$2', _ = '_'}, [{'==', '$1', Backend}], ['$2']}])
-
-% Keys = mnesia:dirty_select(foo, [{#foo{bar = '$1', _ = '_'}, [], ['$1']}])
-% lists:foreach(fun(Key) -> mnesia:delete({foo, Key}) end, Keys)
-
 %%====================================================================
 %% gen_mod callbacks
 %%====================================================================
 start(Host, Opts) ->
-	?INFO_MSG("start", []),
+	?INFO_MSG("start (~p, ~p)", [Host, Opts]),
 	Proc = gen_mod:get_module_proc(Host, ?MODULE),
 	ChildSpec = #{id=>Proc, start=>{?MODULE, start_link, [Host, Opts]},
 				  restart=>transient, shutdown=>2000,
@@ -117,7 +114,7 @@ handle_call(Request, From, State) ->
 %% 	{stop, normal, ok, State}.
 
 handle_cast({start_ping, JID, Record}, State) ->
-    Timers = add_timer(JID, Record, ?PING_INTERVAL, State#state.timers),
+    Timers = add_timer(JID, Record, State#state.ping_interval, State#state.timers),
     {noreply, State#state{timers = Timers}};
 
 handle_cast({iq_pong, JID, Record, timeout}, State) ->
@@ -139,8 +136,8 @@ handle_info({timeout, _TRef, {ping, #jid{luser = LUser, lserver = LServer} = JID
     Key = ?lookup_key(LUser, LServer),
     case mnesia:dirty_read(component_lb, Key) of
         [Record] ->
-            send_ping(State#state.host, JID, Record),
-            Timers = add_timer(JID, Record, ?PING_INTERVAL, State#state.timers);
+            send_ping(JID, Record, State),
+            Timers = add_timer(JID, Record, State#state.ping_interval, State#state.timers);
         NewRecord ->
             ?WARNING_MSG("Record changed before ping: ~p to ~p", [Record, NewRecord]),
             Timers = del_timer(JID, Record, State#state.timers)
@@ -170,8 +167,8 @@ start_ping(Node, JID, Record) when JID#jid.lresource =:= <<>> ->
 	?INFO_MSG("start_ping: ~p, ~p", [Node, JID]),
 	gen_server:cast({?MODULE, Node}, {start_ping, JID, Record}).
 
--spec send_ping(Host::binary(), JID :: jid:jid(), Record :: component_lb()) -> mongoose_acc:t().
-send_ping(Host, JID, Record) ->
+-spec send_ping(JID :: jid:jid(), Record :: component_lb(), State :: state()) -> mongoose_acc:t().
+send_ping(JID, Record, State) ->
     ?INFO_MSG("Sending ping disco to ~p", [JID]),
     IQ = #iq{type = get,
              sub_el = [#xmlel{name = <<"query">>,
@@ -180,9 +177,9 @@ send_ping(Host, JID, Record) ->
     F = fun(Response) ->
                 gen_server:cast(Pid, {iq_pong, JID, Record, Response})
         end,
-    From = jid:make(<<"">>, Host, <<"">>),
+    From = jid:make(<<"">>, State#state.host, <<"">>),
     Acc = mongoose_acc:from_element(IQ, From, JID),
-    ejabberd_local:route_iq(From, JID, Acc, IQ, F, ?PING_REQ_TIMEOUT).
+    ejabberd_local:route_iq(From, JID, Acc, IQ, F, State#state.ping_timeout).
 
 -spec add_timer(JID :: jid:jid(), Record :: component_lb(),
                 Interval :: non_neg_integer(), Timers :: timers()) -> timers().
@@ -344,6 +341,14 @@ delete_node(Node) ->
 process_opts([{lb, LBOpts}|Opts], State) ->
 	State1 = process_lb_opt(LBOpts, State),
 	process_opts(Opts, State1);
+process_opts([{ping_interval, Value}|Opts], State) ->
+    Sec = timer:seconds(Value),
+    State1 = State#state{ping_interval = Sec},
+    process_opts(Opts, State1);
+process_opts([{ping_timeout, Value}|Opts], State) ->
+    Sec = timer:seconds(Value),
+    State1 = State#state{ping_timeout = Sec},
+    process_opts(Opts, State1);
 process_opts([Opt|Opts], State) ->
 	?WARNING_MSG("unknown opt: ~p", [Opt]),
 	process_opts(Opts, State);
@@ -385,10 +390,9 @@ reload(State) ->
                 [{#component_lb{node = '$1', key = '$2', _ = '_'},
                   [{'==', '$1', node()}],
                   ['$_']}]),
-    Acc = State,
-    lists:foldl(fun(Record, State) ->
-                        reload(Record, State)
-                end, Acc, Records).
+    lists:foldl(fun(Record, S) ->
+                        reload(Record, S)
+                end, State, Records).
 
 -spec reload(Record :: component_lb(), State :: state()) -> state().
 reload(#component_lb{key = {LUser, LServer}} = Record, #state{timers = Timers} = State) ->
@@ -397,7 +401,7 @@ reload(#component_lb{key = {LUser, LServer}} = Record, #state{timers = Timers} =
         {ok, {_TRef, Record}} ->
             Timers1 = Timers;
         _ ->
-            Interval = rand:uniform(?PING_INTERVAL),
+            Interval = rand:uniform(State#state.ping_interval),
             Timers1 = add_timer(JID, Record, Interval, Timers)
     end,
     State#state{timers = Timers1}.
