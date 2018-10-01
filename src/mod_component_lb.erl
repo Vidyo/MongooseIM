@@ -147,8 +147,8 @@ handle_info(Info, State) ->
     ?WARNING_MSG("event=handle_cast_unexpected info=~p", [Info]),
     {noreply, State}.
 
-terminate(_Reason, #state{host = Host} = State) ->
-    ?INFO_MSG("event=terminate", []),
+terminate(Reason, _State) ->
+    ?INFO_MSG("event=terminate reason=~p", [Reason]),
     ejabberd_hooks:delete(node_cleanup, global, ?MODULE, node_cleanup, 90),
     ejabberd_hooks:delete(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
     delete_node(node()),
@@ -222,7 +222,7 @@ cancel_timer(TRef) ->
     end.
 
 -spec delete_record(JID :: jid:jid(), component_lb(), state()) -> state().
-delete_record(#jid{luser = LUser, lserver = LServer} = JID, Record, State) ->
+delete_record(JID, Record, State) ->
     Timers = del_timer(JID, Record, State#state.timers),
     case mnesia:transaction(fun () -> mnesia:delete_object(Record) end) of
         {atomic, _} -> ok;
@@ -243,10 +243,10 @@ lookup_backend(Backends, From, #jid{luser = LUser} = To) ->
 			lookup_backend_persistent(Backends, To)
 	end.
 
-lookup_backend_transient(Backends, #jid{luser = LUser} = From) ->
+lookup_backend_transient(Backends, #jid{luser = LUser} = _From) ->
 	get_random_backend(Backends, LUser).
 
-lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = To) ->
+lookup_backend_persistent(Backends, #jid{luser = LUser, lserver = LServer} = _To) ->
 	Key = ?lookup_key(LUser, LServer),
 	case mnesia:dirty_read(component_lb, Key) of
 		[#component_lb{key = Key, backend = Domain, handler = Handler, node = Node}] ->
