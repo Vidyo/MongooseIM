@@ -24,7 +24,6 @@ route(From, #jid{lserver = LServer} = To, Acc, Packet) ->
 		notfound ->
 			{From, To, Acc, Packet};
 		{Domain, Handler, _Node} ->
-			?INFO_MSG("route to backend: ~p => ~p", [To, Domain]),
 			mongoose_local_delivery:do_route(From, To, Acc, Packet, LServer, Handler),
 			done
 	end.

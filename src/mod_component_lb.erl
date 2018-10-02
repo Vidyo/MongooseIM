@@ -226,7 +226,7 @@ cancel_timer(TRef) ->
 -spec delete_record(JID :: jid:jid(), component_lb(), state()) -> state().
 delete_record(JID, Record, State) ->
     Timers = del_timer(JID, Record, State#state.timers),
-    case mnesia:transaction(fun () -> mnesia:delete_object(Record) end) of
+    case mnesia:transaction(fun() -> mnesia:delete_object(Record) end) of
         {atomic, _} -> ok;
         {aborted, Reason} -> ?WARNING_MSG("event=record_delete_error record=~p reason=~p", [Record, Reason])
     end,
@@ -380,7 +380,6 @@ process_lb_opt(Opt, State) ->
 
 compile_dynamic_src(State) ->
     Source = mod_component_lb_dynamic_src(State),
-    ?INFO_MSG("compile src: ~s", [Source]),
     {Module, Code} = dynamic_compile:from_string(Source),
     code:load_binary(Module, "mod_component_lb_dynamic.erl", Code),
     ok.
