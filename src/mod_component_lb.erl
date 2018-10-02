@@ -13,7 +13,7 @@
 -define(lookup_key(LUser, LServer), {LUser, LServer}).
 -define(DEFAULT_PING_INTERVAL, timer:seconds(10*60)).
 -define(DEFAULT_PING_TIMEOUT, timer:seconds(20)).
--define(TX_RETRIES, 2).
+-define(DEFAULT_TX_RETRIES, 2).
 
 %% API
 -export([start_link/2, lookup_backend/2]).
@@ -32,6 +32,7 @@
                 timers = maps:new(),
                 ping_interval = ?DEFAULT_PING_INTERVAL,
                 ping_timeout = ?DEFAULT_PING_TIMEOUT,
+                tx_retries = ?DEFAULT_TX_RETRIES,
                 host = <<"">>}).
 -record(component_lb, {key, backend, handler, node}).
 
@@ -100,7 +101,7 @@ init([Host, Opts]) ->
 						 {index, [#component_lb.backend, #component_lb.node]},
 						 {attributes, record_info(fields, component_lb)}]),
 	mnesia:add_table_copy(key, node(), ram_copies),
-	compile_frontends(State#state.lb),
+	compile_dynamic_src(State),
 	State1 = reload(State),
 	ejabberd_hooks:add(node_cleanup, global, ?MODULE, node_cleanup, 90),
 	ejabberd_hooks:add(unregister_subhost, global, ?MODULE, unregister_subhost, 90),
@@ -282,7 +283,8 @@ write_record({LUser, LServer} = Key, Domain, Handler, Node) ->
 						mnesia:abort(R1) %% somebody else has added the record, just use it
 				end
 		end,
-	case mnesia:transaction(F, ?TX_RETRIES) of
+	TxRetries = mod_component_lb_dynamic:get_tx_retries(),
+	case mnesia:transaction(F, TxRetries) of
 		{atomic, R} ->
 			?DEBUG("event=record_insert key=~p record=~p", [Key, R]),
 			JID = jid:make(LUser, LServer, <<>>), %% we want to go to Domain directly!!
@@ -354,6 +356,9 @@ process_opts([{ping_timeout, Value}|Opts], State) ->
     Sec = timer:seconds(Value),
     State1 = State#state{ping_timeout = Sec},
     process_opts(Opts, State1);
+process_opts([{tx_retries, Value}|Opts], State) ->
+    State1 = State#state{tx_retries = Value},
+    process_opts(Opts, State1);
 process_opts([Opt|Opts], State) ->
 	?WARNING_MSG("event=config_unknown_option option=~p", [Opt]),
 	process_opts(Opts, State);
@@ -373,16 +378,20 @@ process_lb_opt(Opt, State) ->
 	?WARNING_MSG("event=config_unknown_lb_opttion option=~p", [Opt]),
 	State.
 
-compile_frontends(Frontends) ->
-    Source = mod_component_lb_dynamic_src(Frontends),
+compile_dynamic_src(State) ->
+    Source = mod_component_lb_dynamic_src(State),
+    ?INFO_MSG("compile src: ~s", [Source]),
     {Module, Code} = dynamic_compile:from_string(Source),
     code:load_binary(Module, "mod_component_lb_dynamic.erl", Code),
     ok.
 
-mod_component_lb_dynamic_src(Frontends) ->
+mod_component_lb_dynamic_src(#state{lb = Frontends, tx_retries = TxRetries} = _State) ->
     lists:flatten(
         ["-module(mod_component_lb_dynamic).
-         -export([get_backends/1]).
+         -export([get_backends/1, get_tx_retries/0]).
+
+         get_tx_retries() ->
+             ", io_lib:format("~p", [TxRetries]), ".
 
          get_backends(Domain) ->
              ", io_lib:format("maps:find(Domain, ~p)", [Frontends]), ".\n"]).
