@@ -172,7 +172,7 @@ send_ping(JID, Record, State) ->
     ?DEBUG("event=room_ping_send jid=~p", [JID]),
     IQ = #iq{type = get,
              sub_el = [#xmlel{name = <<"query">>,
-                              attrs = [{<<"xmlns">>, ?NS_DISCO_INFO}]}]},
+                              attrs = [{<<"xmlns">>, ?NS_DISCO_ITEMS}]}]},
     Pid = self(),
     F = fun(Response) ->
                 gen_server:cast(Pid, {iq_pong, JID, Record, Response})
