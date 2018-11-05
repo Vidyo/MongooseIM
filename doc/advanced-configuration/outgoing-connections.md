@@ -487,3 +487,5 @@ The `ConnectionOptions` list can take following parametrs as `{key, value`} pair
    {confirms_enabled, true}]}
 ]}.
 ```
+> Notice that MongooseIM will start as many `rabbit` pools as XMPP hosts are served by
+> the server. This is because atom `host` is passed as `Host` parameter.
