@@ -30,6 +30,9 @@
 -behaviour(gen_server).
 -behaviour(gen_mod).
 -behaviour(mongoose_packet_handler).
+-behaviour(gdpr).
+
+-export([retrive_all/1]).
 
 %% API
 -export([start_link/2,
@@ -434,6 +437,23 @@ terminate(_Reason, State) ->
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%%--------------------------------------------------------------------
+%%% GDPR related functions
+%%--------------------------------------------------------------------
+
+retrive_all(Pred) ->
+    lists:flatten([retrive(Tab, Pred) || Tab <- tables()]).
+
+tables() -> [{mnesia,  muc_room}, {mnesia, muc_online_room}, {mnesia, muc_registered}].
+
+retrive({mnesia, Table}, Pred) ->
+    MatchSpec = mnesia:table_info(Table, wild_pattern),
+    Fun = fun() -> mnesia:match_object(MatchSpec) end,
+    {atomic, Result} = mnesia:transaction(Fun),
+    lists:filter(Pred, Result);
+
+retrive(_, _Fun) -> {error, table_not_exist}.
 
 %%--------------------------------------------------------------------
 %%% Internal functions
