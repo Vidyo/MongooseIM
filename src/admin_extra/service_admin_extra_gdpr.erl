@@ -58,7 +58,8 @@ retrieve_all(Username, Domain, ResultFilePath) ->
 modules_with_personal_data() ->
     [
      mod_vcard,
-     mod_pubsub
+     mod_pubsub,
+     mod_inbox
     ].
 
 -spec get_data_from_modules(jid:user(), jid:server()) ->
