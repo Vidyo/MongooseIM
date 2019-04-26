@@ -23,7 +23,7 @@
          retrieve_pubsub_subscriptions/1,
          retrieve_private_xml/1,
          retrieve_inbox/1,
-         retrieve_inbox_for_multipe_messages/1,
+         retrieve_inbox_for_multiple_messages/1,
          retrieve_logs/1
         ]).
 -export([
@@ -59,7 +59,7 @@ groups() ->
                                    %retrieve_offline,
                                    %retrieve_private_xml,
                                    retrieve_inbox,
-                                   retrieve_inbox_for_multipe_messages,
+                                   retrieve_inbox_for_multiple_messages,
                                    retrieve_logs
                                   ]},
         {retrieve_personal_data_pubsub, [], [

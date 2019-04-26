@@ -86,8 +86,8 @@
 %% gdpr callbacks
 %%--------------------------------------------------------------------
 
--spec get_personal_data(gdpr:username(), gdpr:domain()) ->
-    [{gdpr:table(), gdpr:schema(), gdpr:entities()}].
+-spec get_personal_data(jid:username(), jid:server()) ->
+    [{gdpr:data_group(), gdpr:schema(), gdpr:entries()}].
 get_personal_data(Username, Server) ->
     LUser = jid:nodeprep(Username),
     LServer = jid:nameprep(Server),
@@ -99,7 +99,9 @@ get_personal_data(Username, Server) ->
         hidden_read => false
        },
     Entries = mod_inbox_backend:get_inbox(LUser, LServer, InboxParams),
-    [{inbox, Schema, Entries}].
+    ProcessedEntries = [{ RemJID, Content, UnreadCount, jlib:now_to_utc_string(Timestamp) } ||
+                        { RemJID, Content, UnreadCount, Timestamp } <- Entries],
+    [{inbox, Schema, ProcessedEntries}].
 
 %%--------------------------------------------------------------------
 %% inbox callbacks
