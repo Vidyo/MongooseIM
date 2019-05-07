@@ -90,14 +90,9 @@ end_per_group(_GN, Config) ->
     Config.
 
 init_per_testcase(retrieve_inbox = CN, Config) ->
-    case (not ct_helper:is_ct_running())
-         orelse mongoose_helper:is_rdbms_enabled(domain()) of
-        true ->
-            dynamic_modules:ensure_modules(domain(), inbox_required_modules()),
-            escalus:init_per_testcase(CN, Config);
-        false ->
-            {skip, require_rdbms}
-    end;
+    init_inbox(CN, Config);
+init_per_testcase(retrieve_inbox_for_multiple_messages = CN, Config) ->
+    init_inbox(CN, Config);
 init_per_testcase(retrieve_vcard = CN, Config) ->
     case vcard_update:is_vcard_ldap() of
         true ->
@@ -124,6 +119,15 @@ end_per_testcase(CN, Config) ->
     delete_files(),
     escalus:end_per_testcase(CN, Config).
 
+init_inbox(CN, Config) ->
+    case (not ct_helper:is_ct_running())
+         orelse mongoose_helper:is_rdbms_enabled(domain()) of
+        true ->
+            dynamic_modules:ensure_modules(domain(), inbox_required_modules()),
+            escalus:init_per_testcase(CN, Config);
+        false ->
+            {skip, require_rdbms}
+    end.
 inbox_required_modules() ->
     [
      {mod_inbox, inbox_opts()}
