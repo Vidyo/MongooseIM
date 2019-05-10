@@ -45,33 +45,39 @@ suite() ->
 all() ->
     [
      {group, retrieve_personal_data},
-     {group, retrieve_personal_data_pubsub},
-     {group, data_is_not_retrieved_for_missing_user}
+     {group, retrieve_personal_data_with_mods_disabled},
+     {group, retrieve_negative}
     ].
 
 groups() ->
+    %% **DON'T** make any of these groups parallel, because calling mongooseimctl
+    %% in parallel is broken!
     [
-     {retrieve_personal_data, [parallel], [
-                                   % per type
-                                   retrieve_vcard,
-                                   %retrieve_roster,
-                                   %retrieve_mam,
-                                   %retrieve_offline,
-                                   %retrieve_private_xml,
-                                   retrieve_inbox,
-                                   retrieve_inbox_for_multiple_messages,
-                                   retrieve_logs
-                                  ]},
-        {retrieve_personal_data_pubsub, [], [
-            retrieve_pubsub_payloads,
-            dont_retrieve_other_user_pubsub_payload,
-            retrieve_pubsub_subscriptions,
-            retrieve_created_pubsub_nodes,
-            retrieve_all_pubsub_data
-        ]},
-    {data_is_not_retrieved_for_missing_user, [],
-        [data_is_not_retrieved_for_missing_user]
-    }
+     {retrieve_personal_data, [], [
+                                           retrieve_vcard,
+                                           %retrieve_roster,
+                                           %retrieve_mam,
+                                           %retrieve_offline,
+                                           %retrieve_private_xml,
+                                           %retrieve_inbox,
+                                           retrieve_logs,
+                                           {group, retrieve_personal_data_pubsub}
+                                          ]},
+     {retrieve_personal_data_pubsub, [], [
+                                          retrieve_pubsub_payloads,
+                                          dont_retrieve_other_user_pubsub_payload,
+                                          retrieve_pubsub_subscriptions,
+                                          retrieve_created_pubsub_nodes,
+                                          retrieve_all_pubsub_data
+                                         ]},
+     {retrieve_personal_data_with_mods_disabled, [], [
+                                                      retrieve_vcard,
+                                                      retrieve_logs,
+                                                      retrieve_all_pubsub_data
+                                                     ]},
+     {retrieve_negative, [], [
+                              data_is_not_retrieved_for_missing_user
+                             ]}
     ].
 
 init_per_suite(Config) ->
@@ -79,10 +85,17 @@ init_per_suite(Config) ->
     escalus:init_per_suite(Config1).
 
 end_per_suite(Config) ->
+    delete_files(),
     dynamic_modules:restore_modules(domain(), Config),
     escalus_fresh:clean(),
     escalus:end_per_suite(Config).
 
+init_per_group(retrieve_personal_data_with_mods_disabled, Config) ->
+    dynamic_modules:ensure_modules(domain(), pubsub_required_modules()),
+    [{disable_module, true} | Config];
+init_per_group(retrieve_personal_data_pubsub, Config) ->
+    dynamic_modules:ensure_modules(domain(), pubsub_required_modules()),
+    Config;
 init_per_group(_GN, Config) ->
     Config.
 
@@ -109,14 +122,9 @@ init_per_testcase(retrieve_mam = CN, Config) ->
             escalus:init_per_testcase(CN, Config)
     end;
 init_per_testcase(CN, Config) ->
-    dynamic_modules:ensure_modules(domain(), pubsub_required_modules()),
     escalus:init_per_testcase(CN, Config).
 
-end_per_testcase(retrieve_vcard = CN, Config) ->
-    delete_files(),
-    escalus:end_per_testcase(CN, Config);
 end_per_testcase(CN, Config) ->
-    delete_files(),
     escalus:end_per_testcase(CN, Config).
 
 init_inbox(CN, Config) ->
@@ -185,6 +193,7 @@ retrieve_vcard(Config) ->
                                 "vcard" => [{contains, "Alice"},
                                             {contains, "Ecila"}] }
                             ],
+            maybe_stop_and_unload_module(mod_vcard, mod_vcard_backend, Config),
             retrieve_and_validate_personal_data(
               Alice, Config, "vcard", ExpectedHeader, ExpectedItems)
         end).
@@ -196,6 +205,7 @@ retrieve_roster(Config) ->
             ExpectedItems = [
                              #{ "jid" => escalus_client:short_jid(Bob) }
                             ],
+            maybe_stop_and_unload_module(mod_roster, mod_roster_backend, Config),
             retrieve_and_validate_personal_data(
               Alice, Config, "roster", ExpectedHeader, ExpectedItems)
         end).
@@ -222,6 +232,7 @@ retrieve_offline(Config) ->
             ExpectedItems = [
                              #{ "packet" => [{contains, Body}], "from" => BobJid }
                             ],
+            maybe_stop_and_unload_module(mod_offline, mod_offline_backend, Config),
             retrieve_and_validate_personal_data(
               Alice, Config, "offline", ExpectedHeader, ExpectedItems)
         end).
@@ -244,6 +255,8 @@ retrieve_pubsub_payloads(Config) ->
                          pubsub_payloads_row_map(NodeName1, "Item2",StringItem2),
                          pubsub_payloads_row_map(NodeName1, "Item3", StringItem3),
                          pubsub_payloads_row_map(NodeName2, "OtherItem", StringOther)],
+
+        maybe_stop_and_unload_module(mod_vcard, mod_vcard_backend, Config),
         retrieve_and_validate_personal_data(
             Alice, Config, "pubsub_payloads", ["node_name", "item_id", "payload"], ExpectedItems)
                                               end).
@@ -337,6 +350,7 @@ retrieve_all_pubsub_data(Config) ->
         pubsub_tools:receive_item_notification(Bob, <<"Item2">>, Node2, []),
         pubsub_tools:publish(Bob, <<"Item3">>, Node1, [{with_payload, {true, BinItem3}}]),
 
+        maybe_stop_and_unload_module(mod_pubsub, mod_pubsub_db_backend, Config),
         %% Bob has one subscription, one node created and one payload sent
         retrieve_and_validate_personal_data(
             Bob, Config, "pubsub_subscriptions", ["node_name"],
@@ -358,11 +372,8 @@ retrieve_all_pubsub_data(Config) ->
         retrieve_and_validate_personal_data(
             Alice, Config, "pubsub_payloads", ["node_name", "item_id","payload"],
             [pubsub_payloads_row_map(NodeName1, "Item1", StringItem1),
-             pubsub_payloads_row_map(NodeName2, "Item2", StringItem2)]),
-
-        Nodes = [{Alice, Node1}, {Alice, Node2}, {Bob, Node3}],
-        [pubsub_tools:delete_node(User, Node, []) || {User, Node} <- Nodes]
-                                                        end).
+             pubsub_payloads_row_map(NodeName2, "Item2", StringItem2)])
+      end).
 
 
 retrieve_private_xml(Config) ->
@@ -461,6 +472,16 @@ data_is_not_retrieved_for_missing_user(Config) ->
 domain() ->
     <<"localhost">>. % TODO: Make dynamic?
 
+maybe_stop_and_unload_module(Module, BackendProxy, Config) ->
+    case proplists:get_value(disable_module, Config) of
+        true ->
+            dynamic_modules:stop(domain(), Module),
+            mongoose_helper:successful_rpc(code, purge, [BackendProxy]),
+            true = mongoose_helper:successful_rpc(code, delete, [BackendProxy]);
+        _ ->
+            ok
+    end.
+
 retrieve_and_validate_personal_data(Alice, Config, FilePrefix, ExpectedHeader, ExpectedItems) ->
     PersonalCSV = retrieve_and_decode_personal_data(Alice, Config, FilePrefix),
     PersonalMaps = csv_to_maps(ExpectedHeader, PersonalCSV),
@@ -486,7 +507,9 @@ csv_row_to_map(Header, Row) ->
 validate_personal_maps(PersonalMaps, ExpectedItems) ->
     validate_sorted_personal_maps(lists:sort(PersonalMaps), lists:sort(ExpectedItems)).
 
-validate_sorted_personal_maps(_, []) -> ok;
+validate_sorted_personal_maps([], []) -> ok;
+validate_sorted_personal_maps(UnexpectedRecords, []) ->
+    erlang:error("Unexpected records left ~p", [UnexpectedRecords]);
 validate_sorted_personal_maps([Map | RMaps], [Checks | RChecks]) ->
     maps:fold(fun(K, Conditions, _) ->
                       validate_personal_item(maps:get(K, Map), Conditions)
