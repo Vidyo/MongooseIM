@@ -94,14 +94,14 @@ groups() ->
                              ]},
      {retrieve_personal_data_mam, [], [
                                        {group, retrieve_personal_data_mam_rdbms},
-                                       {group, retrieve_personal_data_mam_riak},
+                                       %{group, retrieve_personal_data_mam_riak},
                                        {group, retrieve_personal_data_mam_cassandra},
                                        {group, retrieve_personal_data_mam_elasticsearch}
                                       ]},
      {retrieve_personal_data_mam_rdbms, [], mam_testcases()},
      {retrieve_personal_data_mam_riak, [], mam_testcases()},
      {retrieve_personal_data_mam_cassandra, [], mam_testcases()},
-     {retrieve_personal_data_mam_elasticsearch, [], mam_testcases()}
+     {retrieve_personal_data_mam_elasticsearch, [], [retrieve_mam_pm]}
     ].
 
 mam_testcases() ->
@@ -709,9 +709,14 @@ retrieve_all_personal_data(Client, Config) ->
 request_and_unzip_personal_data(User, Domain, Config) ->
     {Filename, 0, _} = retrieve_personal_data(User, Domain, Config),
     FullPath = get_mim_cwd() ++ "/" ++ Filename,
-    Dir = Filename ++ "." ++ binary_to_list(User) ++ ".unzipped",
+    Dir = make_dir_name(Filename, User),
     {ok, _} = zip:extract(FullPath, [{cwd, Dir}]),
     Dir.
+
+make_dir_name(Filename, User) when is_binary(User) ->
+    make_dir_name(Filename, binary_to_list(User));
+make_dir_name(Filename, User) when is_list(User) ->
+    Filename ++ "." ++ User ++ ".unzipped".
 
 retrieve_personal_data(User, Domain, Config) ->
     Filename = random_filename(Config),
