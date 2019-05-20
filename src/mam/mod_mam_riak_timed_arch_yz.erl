@@ -343,6 +343,11 @@ get_mam_pm_gdpr_data(Username, Host) ->
 is_message_from_jid(BareJid, {_MsgId, SourceFullJid, _Packet}) ->
     BareJid == jid:to_bare(SourceFullJid).
 
+is_muclight_message(_BareJid, {_MsgId, #jid{lresource = <<>>}, _Packet}) -> false;
+is_muclight_message(BareJid, {_MsgId, #jid{lresource = Resource}, _Packet}) -> jid:to_binary(BareJid) == Resource.
+
+
+
 -spec get_mam_muc_gdpr_data(jid:username(), jid:server()) -> {ok, mod_mam:messages()}.
 get_mam_muc_gdpr_data(Username, Host) ->
     LUser = jid:nodeprep(Username),
@@ -360,7 +365,8 @@ get_mam_muc_gdpr_data(Username, Host) ->
             search_text => undefined,
             is_simple => true} ),
 
-    {ok, [{MsgId, Packet} || {MsgId, _, Packet} <- Messages]}.
+    Filtered = lists:filter(fun(El) -> is_muclight_message(Jid, El) end, Messages),
+    {ok, [{MsgId, Packet} || {MsgId, _, Packet} <- Filtered]}.
 
 
 remove_archive(Acc, Host, ArchiveID, ArchiveJID) ->

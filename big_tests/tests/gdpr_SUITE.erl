@@ -324,29 +324,35 @@ retrieve_mam_pm_and_muc_light_dont_interfere(Config) ->
     F = fun(Alice, Bob) ->
         RoomJid = muc_light_helper:given_muc_light_room(undefined, Alice, [{Bob, member}]),
         [Room, Domain] = binary:split(RoomJid, <<"@">>),
-        BodyMuc = <<"some simple muc message">>,
-        BodyPm = <<"some simple pm message">>,
+        BodyMucAlice = <<"some simple muc message from Alice">>,
+        BodyMucBob = <<"some simple muc message from Bob">>,
+        BodyPmAlice = <<"some simple pm message from Alice">>,
+        BodyPmBob = <<"some simple pm message from Bob">>,
 
-        M1 = muc_light_helper:when_muc_light_message_is_sent(Alice, Room, BodyMuc, <<"Id1">>),
+        M1 = muc_light_helper:when_muc_light_message_is_sent(Alice, Room, BodyMucAlice, <<"Id1">>),
         muc_light_helper:then_muc_light_message_is_received_by([Alice, Bob], M1),
+        M2 = muc_light_helper:when_muc_light_message_is_sent(Bob, Room, BodyMucBob, <<"Id1">>),
+        muc_light_helper:then_muc_light_message_is_received_by([Alice, Bob], M2),
 
-        escalus:send(Alice, escalus_stanza:chat_to(Bob, BodyPm)),
+        escalus:send(Alice, escalus_stanza:chat_to(Bob, BodyPmAlice)),
+        escalus:send(Bob, escalus_stanza:chat_to(Alice, BodyPmBob)),
 
 
-        mam_helper:wait_for_room_archive_size(Domain, Room, 2),
+        mam_helper:wait_for_room_archive_size(Domain, Room, 4),
 
         BackendModule = choose_mam_backend(Config, mam),
         maybe_stop_and_unload_module(mod_mam, BackendModule, Config),
         maybe_stop_and_unload_module(mod_mam_muc, BackendModule, Config),
 
         retrieve_and_validate_personal_data(Alice, Config, "mam_muc", ["id", "message"],
-            [#{"message" => [{contains, binary_to_list(BodyMuc)}]}]),
-        retrieve_and_validate_personal_data(Bob, Config, "mam_muc", ["id", "message"], []),
+            [#{"message" => [{contains, binary_to_list(BodyMucAlice)}]}]),
+        retrieve_and_validate_personal_data(Bob, Config, "mam_muc", ["id", "message"], [
+            #{"message" => [{contains, binary_to_list(BodyMucBob)}]}]),
 
         retrieve_and_validate_personal_data(
-            Alice, Config, "mam_pm", ["id", "message"], [#{"message" => [{contains, BodyPm}]}]),
+            Alice, Config, "mam_pm", ["id", "message"], [#{"message" => [{contains, BodyPmAlice}]}]),
         retrieve_and_validate_personal_data(
-            Bob, Config, "mam_pm", ["id", "message"], [])
+            Bob, Config, "mam_pm", ["id", "message"], [#{"message" => [{contains, BodyPmBob}]}])
 
         end,
     escalus_fresh:story(Config, [{alice, 1}, {bob, 1}], F).
