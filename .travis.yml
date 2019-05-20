@@ -78,6 +78,7 @@ branches:
                 - /^rel\-\d+\.\d+$/
                 - /^\d+\.\d+\.\d+([a-z0-9\-\+])*/
                 - gdpr-retrieve-clean
+                - gdpr-retrieve-mam
 
 otp_release:
         - 19.3
