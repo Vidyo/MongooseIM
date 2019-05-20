@@ -44,7 +44,7 @@
 -export([create_obj/5, read_archive/7, bucket/1,
          list_mam_buckets/0, remove_bucket/1]).
 
--export([get_mam_muc_gdpr_data/2]).
+-export([get_mam_muc_gdpr_data/2, get_mam_pm_gdpr_data/2]).
 
 -type yearweeknum() :: {non_neg_integer(), 1..53}.
 
@@ -319,6 +319,29 @@ get_message2(Host, MsgId, Bucket, Key) ->
         _ ->
             []
     end.
+
+-spec get_mam_pm_gdpr_data(jid:username(), jid:server()) -> {ok, mod_mam:messages()}.
+get_mam_pm_gdpr_data(Username, Host) ->
+    LUser = jid:nodeprep(Username),
+    LServer = jid:nodeprep(Host),
+    Jid = jid:make({LUser, LServer, <<>>}),
+    {ok, {_, _, Messages}} = lookup_messages([], Host,
+        #{
+            with_jid => undefined,
+            owner_jid => Jid,
+            rsm => undefined,
+            page_size => undefined,
+            borders => undefined,
+            start_ts => undefined,
+            end_ts => undefined,
+            search_text => undefined,
+            is_simple => true} ),
+
+    Filtered = lists:filter(fun(El) -> is_message_from_jid(Jid, El) end, Messages),
+    {ok, [{MsgId, Packet} || {MsgId, _, Packet} <- Filtered]}.
+
+is_message_from_jid(BareJid, {_MsgId, SourceFullJid, _Packet}) ->
+    BareJid == jid:to_bare(SourceFullJid).
 
 -spec get_mam_muc_gdpr_data(jid:username(), jid:server()) -> {ok, mod_mam:messages()}.
 get_mam_muc_gdpr_data(Username, Host) ->
