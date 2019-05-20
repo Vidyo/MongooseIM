@@ -858,12 +858,12 @@ choose_mam_backend(Config, mam) ->
             riak -> mod_mam_riak_timed_arch_yz;
             cassandra -> [mod_mam_cassandra_arch, mod_mam_cassandra_arch_params];
             elasticsearch -> mod_mam_elasticsearch_arch
-end;
+    end;
 choose_mam_backend(Config, mam_muc) ->
     case proplists:get_value(mam_backend, Config) of
-        rdbms -> mod_mam_muc_rdbms_arch;
-        riak -> mod_mam_riak_timed_arch_yz;
-        cassandra -> [mod_mam_muc_cassandra_arch, mod_mam_muc_cassandra_arch_params];
-        elasticsearch -> mod_mam_muc_elasticsearch_arch
+            rdbms -> mod_mam_muc_rdbms_arch;
+            riak -> mod_mam_riak_timed_arch_yz;
+            cassandra -> [mod_mam_muc_cassandra_arch, mod_mam_muc_cassandra_arch_params];
+            elasticsearch -> mod_mam_muc_elasticsearch_arch
     end.
 
