@@ -392,8 +392,7 @@ rooms_in_rosters(Config) ->
                         mod_roster,
                         get_user_rosters_length,
                         [AliceU, AliceS])
-                end,
-                1),
+                end, 1, #{time_left => timer:minutes(1)}),
             RosterResult = escalus:wait_for_stanza(Alice),
             escalus_assert:is_roster_result(RosterResult),
 
