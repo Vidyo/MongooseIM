@@ -160,6 +160,7 @@ removal_testcases() ->
         remove_private,
         remove_multiple_private_xmls,
         dont_remove_other_user_private_xml,
+        {group, remove_personal_data_pubsub},
         {group, remove_personal_data_inbox}
     ].
 
