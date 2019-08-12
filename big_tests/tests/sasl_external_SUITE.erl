@@ -139,16 +139,16 @@ modify_config_and_restart(CyrsaslExternalConfig, Config) ->
     CACertFile = filename:join([path_helper:repo_dir(Config),
                                 "tools", "ssl", "ca-clients", "cacert.pem"]),
     NewConfigValues = [{tls_config, "{certfile, \"priv/ssl/fake_server.pem\"},"
-			            "starttls, verify_peer,"
-				    "{cafile, \"" ++ CACertFile ++ "\"},"
+                        "starttls, verify_peer,"
+                    "{cafile, \"" ++ CACertFile ++ "\"},"
                                     ++ SSLOpts},
-		       {tls_module, "{tls_module, " ++ TLSModule ++ "},"},
-		       {https_config,  "{ssl, [{certfile, \"priv/ssl/fake_cert.pem\"},"
-			                      "{keyfile, \"priv/ssl/fake_key.pem\"}, {password, \"\"},"
-				              "{verify, verify_peer}," ++ VerifyMode ++
-					      "{cacertfile, \"" ++ CACertFile ++ "\"}]},"},
-                       {cyrsasl_external, "{cyrsasl_external," ++ CyrsaslExternalConfig ++ "}"},
-		       {sasl_mechanisms, "{sasl_mechanisms, [cyrsasl_external]}."} | AuthMethods],
+               {tls_module, "{tls_module, " ++ TLSModule ++ "},"},
+               {https_config,  "{ssl, [{certfile, \"priv/ssl/fake_cert.pem\"},"
+                                  "{keyfile, \"priv/ssl/fake_key.pem\"}, {password, \"\"},"
+                              "{verify, verify_peer}," ++ VerifyMode ++
+                          "{cacertfile, \"" ++ CACertFile ++ "\"}]},"},
+               {cyrsasl_external, "{cyrsasl_external," ++ CyrsaslExternalConfig ++ "}"},
+               {sasl_mechanisms, "{sasl_mechanisms, [cyrsasl_external]}."} | AuthMethods],
     ejabberd_node_utils:modify_config_file(NewConfigValues, Config),
     ejabberd_node_utils:restart_application(mongooseim).
 
@@ -161,7 +161,7 @@ cert_more_xmpp_addrs_identity_correct(C) ->
     User = username("kate", C),
     %% More than one xmpp_addr and specified identity, common_name not used
     UserSpec = [{requested_name, requested_name(User)} |
-		generate_user_tcp(C, User)],
+        generate_user_tcp(C, User)],
     {ok, Client, _} = escalus_connection:start(UserSpec),
     escalus_connection:stop(Client).
 
@@ -180,7 +180,7 @@ cert_no_xmpp_addrs_fails(C) ->
 cert_no_xmpp_addrs_just_use_identity(C) ->
     User = username("not-mike", C),
     UserSpec = [{requested_name, <<"mike@localhost">>} |
-		generate_user_tcp(C, User)],
+        generate_user_tcp(C, User)],
     {ok, Client, _} = escalus_connection:start(UserSpec),
     escalus_connection:stop(Client).
 
@@ -260,44 +260,44 @@ self_signed_cert_fails_to_authenticate_with_bosh(C) ->
 cert_fails_to_authenticate(UserSpec) ->
     Self = self(),
     F = fun() ->
-		{ok, Client, _} = escalus_connection:start(UserSpec),
-		Self ! escalus_connected,
-		escalus_connection:stop(Client)
-	end,
+        {ok, Client, _} = escalus_connection:start(UserSpec),
+        Self ! escalus_connected,
+        escalus_connection:stop(Client)
+    end,
     %% We spawn the process trying to connect because otherwise the testcase may crash
     %% due linked process crash (client's process are started with start_link)
     Pid = spawn(F),
     MRef = erlang:monitor(process, Pid),
 
     receive
-	{'DOWN', MRef, process, Pid, _Reason} ->
-	    ok;
-	escalus_connected ->
-	    ct:fail(authenticated_but_should_not)
+    {'DOWN', MRef, process, Pid, _Reason} ->
+        ok;
+    escalus_connected ->
+        ct:fail(authenticated_but_should_not)
     after 10000 ->
-	      ct:fail(timeout_waiting_for_authentication_error)
+          ct:fail(timeout_waiting_for_authentication_error)
     end.
 
 self_signed_cert_fails_to_authenticate(C, EscalusTransport) ->
     Self = self(),
     F = fun() ->
-		UserSpec = generate_user(C, "greg-self-signed", EscalusTransport),
-		{ok, Client, _} = escalus_connection:start(UserSpec),
-		Self ! escalus_connected,
-		escalus_connection:stop(Client)
-	end,
+        UserSpec = generate_user(C, "greg-self-signed", EscalusTransport),
+        {ok, Client, _} = escalus_connection:start(UserSpec),
+        Self ! escalus_connected,
+        escalus_connection:stop(Client)
+    end,
     %% We spawn the process trying to connect because otherwise the testcase may crash
     %% due linked process crash (client's process are started with start_link)
     Pid = spawn(F),
     MRef = erlang:monitor(process, Pid),
 
     receive
-	{'DOWN', MRef, process, Pid, _Reason} ->
-	    ok;
-	escalus_connected ->
-	    ct:fail(authenticated_but_should_not)
+    {'DOWN', MRef, process, Pid, _Reason} ->
+        ok;
+    escalus_connected ->
+        ct:fail(authenticated_but_should_not)
     after 10000 ->
-	      ct:fail(timeout_waiting_for_authentication_error)
+          ct:fail(timeout_waiting_for_authentication_error)
     end.
 
 self_signed_cert_is_allowed_with_tls(C) ->
@@ -316,11 +316,12 @@ self_signed_cert_is_allowed_with(EscalusTransport, C) ->
 
 no_cert_fails_to_authenticate(_C) ->
     UserSpec = [{username, <<"no_cert_user">>},
-		{server, <<"localhost">>},
-		{password, <<"break_me">>},
-		{resource, <<>>}, %% Allow the server to generate the resource
-		{auth, {escalus_auth, auth_sasl_external}},
-		{starttls, required}],
+        {server, <<"localhost">>},
+        {port, ct:get_config({hosts, mim, c2s_port})},
+        {password, <<"break_me">>},
+        {resource, <<>>}, %% Allow the server to generate the resource
+        {auth, {escalus_auth, auth_sasl_external}},
+        {starttls, required}],
 
     Result = escalus_connection:start(UserSpec),
     ?assertMatch({error, {connection_step_failed, _, _}}, Result),
@@ -353,17 +354,17 @@ generate_cert(C, #{cn := User} = CertSpec) ->
     UserKey = filename:join(?config(priv_dir, C), User ++ "_key.pem"),
 
     case maps:get(signed, CertSpec, ca) of
-	ca ->
-	    generate_ca_signed_cert(C, User, UserConfig, UserKey);
-	self ->
-	    generate_self_signed_cert(C, User, UserConfig, UserKey)
+    ca ->
+        generate_ca_signed_cert(C, User, UserConfig, UserKey);
+    self ->
+        generate_self_signed_cert(C, User, UserConfig, UserKey)
     end.
 
 generate_ca_signed_cert(C, User, UserConfig, UserKey ) ->
     UserCsr = filename:join(?config(priv_dir, C), User ++ ".csr"),
 
     Cmd = ["openssl", "req", "-config", UserConfig, "-newkey", "rsa:2048", "-sha256", "-nodes",
-	   "-out", UserCsr, "-keyout", UserKey, "-outform", "PEM"],
+       "-out", UserCsr, "-keyout", UserKey, "-outform", "PEM"],
     {done, 0, _Output} = erlsh:run(Cmd),
 
     UserCert = filename:join(?config(priv_dir, C), User ++ "_cert.pem"),
@@ -379,7 +380,7 @@ generate_self_signed_cert(C, User, UserConfig, UserKey) ->
     UserCert = filename:join(?config(priv_dir, C), User ++ "_self_signed_cert.pem"),
 
     Cmd = ["openssl", "req", "-config", UserConfig, "-newkey", "rsa:2048", "-sha256", "-nodes",
-	   "-out", UserCert, "-keyout", UserKey, "-x509", "-outform", "PEM", "-extensions", "client_req_extensions"],
+       "-out", UserCert, "-keyout", UserKey, "-x509", "-outform", "PEM", "-extensions", "client_req_extensions"],
     {done, 0, _Output} = erlsh:run(Cmd),
     #{key => UserKey,
       cert => UserCert}.
@@ -392,14 +393,15 @@ generate_user(C, User, Transport) ->
     UserCert = maps:get(User, Certs),
 
     Common = [{username, list_to_binary(User)},
-	      {server, <<"localhost">>},
-	      {password, <<"break_me">>},
-	      {resource, <<>>}, %% Allow the server to generate the resource
-	      {auth, {escalus_auth, auth_sasl_external}},
-	      {transport, Transport},
-	      {ssl_opts, [{certfile, maps:get(cert, UserCert)},
-			  {keyfile, maps:get(key, UserCert)}]}],
-    Common ++ transport_specific_options(Transport).
+          {server, <<"localhost">>},
+          {password, <<"break_me">>},
+          {resource, <<>>}, %% Allow the server to generate the resource
+          {auth, {escalus_auth, auth_sasl_external}},
+          {transport, Transport},
+          {ssl_opts, [{certfile, maps:get(cert, UserCert)},
+              {keyfile, maps:get(key, UserCert)}]}],
+    Common ++ transport_specific_options(Transport) ++ 
+        [{port, ct:get_config({hosts, mim, c2s_port})}].
 
 transport_specific_options(escalus_tcp) ->
     [{starttls, required}];
@@ -409,7 +411,7 @@ transport_specific_options(_) ->
 
 prepare_template_values(User, XMPPAddrsIn) ->
     Defaults = #{"cn" => User,
-		 "xmppAddrs" => ""},
+         "xmppAddrs" => ""},
     XMPPAddrs = maybe_prepare_xmpp_addresses(XMPPAddrsIn),
     Defaults#{"xmppAddrs" => XMPPAddrs}.
 
