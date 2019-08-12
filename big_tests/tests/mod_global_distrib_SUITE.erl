@@ -101,7 +101,8 @@ groups() ->
 suite() ->
     [{require, europe_node1, {hosts, mim, node}},
      {require, europe_node2, {hosts, mim2, node}},
-     {require, asia_node, {hosts, reg, node}} |
+     {require, asia_node, {hosts, reg, node}},
+     {require, c2s_port, {hosts, mim, c2s_port}} |
      escalus:suite()].
 
 %%--------------------------------------------------------------------
@@ -551,7 +552,7 @@ test_pm_with_disconnection_on_other_server(Config) ->
 
 test_pm_with_graceful_reconnection_to_different_server(Config) ->
     EveSpec = escalus_fresh:freshen_spec(Config, eve),
-    escalus:create_users(Config, [{eve, [{port, 5222} | EveSpec]}]),
+    escalus:create_users(Config, [{eve, [{port, ct:get_config(c2s_port)} | EveSpec]}]),
     escalus:fresh_story(
       Config, [{alice, 1}],
       fun(Alice) ->
@@ -563,7 +564,7 @@ test_pm_with_graceful_reconnection_to_different_server(Config) ->
               FromEve = escalus_client:wait_for_stanza(Alice),
 
               escalus_client:send(Alice, chat_with_seqnum(Eve, <<"Hi from Europe1!">>)),
-              NewEve = connect_from_spec([{port, 5222} | EveSpec], Config),
+              NewEve = connect_from_spec([{port, ct:get_config(c2s_port)} | EveSpec], Config),
 
               escalus_client:send(Alice, chat_with_seqnum(Eve, <<"Hi again from Europe1!">>)),
               escalus_client:send(NewEve, escalus_stanza:chat_to(Alice, <<"Hi again from Asia!">>)),
@@ -579,7 +580,7 @@ test_pm_with_graceful_reconnection_to_different_server(Config) ->
               escalus:assert(is_chat_message, [<<"Hi again from Europe1!">>], AgainFromAlice),
               escalus:assert(is_chat_message, [<<"Hi again from Asia!">>], AgainFromEve)
       end),
-    escalus_users:delete_users(Config, [{eve, [{port, 5222} | EveSpec]}]).
+    escalus_users:delete_users(Config, [{eve, [{port, ct:get_config(c2s_port)} | EveSpec]}]).
 
 test_pm_with_ungraceful_reconnection_to_different_server(Config0) ->
 %% This tests the feature which has not been implemented (yet?) by mod_global_distrib
@@ -587,7 +588,7 @@ test_pm_with_ungraceful_reconnection_to_different_server(Config0) ->
 %% See PR #2392
     Config = escalus_users:update_userspec(Config0, eve, stream_management, true),
     EveSpec = escalus_fresh:create_fresh_user(Config, eve),
-    EveSpec2 = lists:keystore(port, 1, EveSpec, {port, 5222}),
+    EveSpec2 = lists:keystore(port, 1, EveSpec, {port, ct:get_config(c2s_port)}),
     escalus:create_users(Config, [{eve, EveSpec2}]),
     escalus:fresh_story(
       Config, [{alice, 1}],
