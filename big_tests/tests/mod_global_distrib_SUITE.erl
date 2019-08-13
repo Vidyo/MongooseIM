@@ -442,7 +442,7 @@ test_muc_conversation_history(Config0) ->
 
 test_component_on_one_host(Config) ->
     ComponentConfig = [{server, <<"localhost">>}, {host, <<"localhost">>}, {password, <<"secret">>},
-                       {port, 8888}, {component, <<"test_service">>}],
+                       {port, ejabberd_service_port()}, {component, <<"test_service">>}],
 
     {Comp, Addr, _Name} = component_helper:connect_component(ComponentConfig),
 
@@ -469,8 +469,10 @@ test_component_on_one_host(Config) ->
 test_components_in_different_regions(_Config) ->
     ComponentCommonConfig = [{host, <<"localhost">>}, {password, <<"secret">>},
                              {server, <<"localhost">>}, {component, <<"test_service">>}],
-    Component1Config = [{port, 8888}, {component, <<"service1">>} | ComponentCommonConfig],
-    Component2Config = [{port, 9990}, {component, <<"service2">>} | ComponentCommonConfig],
+    Comp1Port = ct:get_config({hosts, mim, ejabberd_service_port}),
+    Comp2Port = ct:get_config({hosts, reg, ejabberd_service_port}),
+    Component1Config = [{port, Comp1Port}, {component, <<"service1">>} | ComponentCommonConfig],
+    Component2Config = [{port, Comp2Port}, {component, <<"service2">>} | ComponentCommonConfig],
 
     {Comp1, Addr1, _Name1} = component_helper:connect_component(Component1Config),
     {Comp2, Addr2, _Name2} = component_helper:connect_component(Component2Config),
@@ -505,7 +507,7 @@ test_hidden_component_disco_in_different_region(Config) ->
 
 test_component_disconnect(Config) ->
     ComponentConfig = [{server, <<"localhost">>}, {host, <<"localhost">>}, {password, <<"secret">>},
-                       {port, 8888}, {component, <<"test_service">>}],
+                       {port, ejabberd_service_port()}, {component, <<"test_service">>}],
 
     {Comp, Addr, _Name} = component_helper:connect_component(ComponentConfig),
     component_helper:disconnect_component(Comp, Addr),
@@ -640,7 +642,7 @@ test_global_disco(Config) ->
 
 test_component_unregister(_Config) ->
     ComponentConfig = [{server, <<"localhost">>}, {host, <<"localhost">>}, {password, <<"secret">>},
-                       {port, 8888}, {component, <<"test_service">>}],
+                       {port, ejabberd_service_port()}, {component, <<"test_service">>}],
 
     {Comp, Addr, _Name} = component_helper:connect_component(ComponentConfig),
     ?assertMatch({ok, _}, rpc(europe_node1, mod_global_distrib_mapping, for_domain,
@@ -758,7 +760,7 @@ wait_for_node(Node,Jid) ->
 test_update_senders_host_by_ejd_service(Config) ->
     %% Connects to europe_node1
     ComponentConfig = [{server, <<"localhost">>}, {host, <<"localhost">>}, {password, <<"secret">>},
-                       {port, 8888}, {component, <<"test_service">>}],
+                       {port, ejabberd_service_port()}, {component, <<"test_service">>}],
 
     {Comp, Addr, _Name} = component_helper:connect_component(ComponentConfig),
 
@@ -1095,3 +1097,6 @@ refresh_mappings(NodeName, Config) ->
 trigger_rebalance(NodeName, DestinationDomain) ->
     rpc(NodeName, mod_global_distrib_server_mgr, force_refresh, [DestinationDomain]),
     timer:sleep(1000).
+
+ejabberd_service_port() ->
+    ct:get_config({hosts, mim, ejabberd_service_port}).
