@@ -184,6 +184,9 @@ one_to_one_message(ConfigIn) ->
 %%--------------------------------------------------------------------
 
 set_master_test(ConfigIn) ->
+    Host = ct:get_config({hosts, mim, domain}),
+    %% To ensure that passwd table exists
+    catch rpc_call(ejabberd_auth_internal, start, [Host]),
     TableName = passwd,
     NodeList =  rpc_call(mnesia, system_info, [running_db_nodes]),
     ejabberdctl("set_master", ["self"], ConfigIn),
