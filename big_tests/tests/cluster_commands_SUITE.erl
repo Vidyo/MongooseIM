@@ -185,8 +185,14 @@ one_to_one_message(ConfigIn) ->
 
 set_master_test(ConfigIn) ->
     Host = ct:get_config({hosts, mim, domain}),
-    %% To ensure that passwd table exists
-    catch rpc_call(ejabberd_auth_internal, start, [Host]),
+    Node1 = ct:get_config({hosts, mim, node}),
+    Node2 = ct:get_config({hosts, mim2, node}),
+
+    %% To ensure that passwd table exists.
+    %% We also need at least two nodes for set_master to work.
+    catch distributed_helper:rpc(Node1, ejabberd_auth_internal, start, [Host]),
+    catch distributed_helper:rpc(Node2, ejabberd_auth_internal, start, [Host]),
+
     TableName = passwd,
     NodeList =  rpc_call(mnesia, system_info, [running_db_nodes]),
     ejabberdctl("set_master", ["self"], ConfigIn),
