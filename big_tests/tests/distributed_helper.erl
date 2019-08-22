@@ -40,15 +40,29 @@ script_path(Node, Config, Script) ->
     filename:join([get_cwd(Node, Config), "bin", Script]).
 
 verify_result(Node, Op) ->
+    mongoose_helper:wait_until(fun() -> catch do_verify_result(Node, Op) end,
+                               ok,
+                               #{
+                                 time_left => timer:seconds(20),
+                                 name => verify_result
+                                }).
+
+do_verify_result(Node, Op) ->
     VerifyNode = mim(),
     DbNodes1 = rpc(Node, mnesia, system_info, [running_db_nodes]),
     DbNodes2 = rpc(VerifyNode, mnesia, system_info, [running_db_nodes]),
-    Pairs = [{Node, DbNodes2, should_belong(Op)},
+    Checks = [{Node, DbNodes2, should_belong(Op)},
         {VerifyNode, DbNodes1, should_belong(Op)},
         {Node, DbNodes1, true},
         {VerifyNode, DbNodes2, true}],
-    [?assertEqual(ShouldBelong, lists:member(Element, List))
-        || {Element, List, ShouldBelong} <- Pairs].
+    [case lists:member(Element, List) of
+         ShouldBelong ->
+             ok;
+         _ ->
+             ct:pal("~p has ~p~n~p has ~p~n", [Node, DbNodes1, VerifyNode, DbNodes2]),
+             error({check_failed, Check})
+     end || Check = {Element, List, ShouldBelong} <- Checks],
+    ok.
 
 should_belong(add) -> true;
 should_belong(remove) -> false.
