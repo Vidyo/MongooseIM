@@ -41,7 +41,7 @@ script_path(Node, Config, Script) ->
 
 verify_result(Node, Op) ->
     mongoose_helper:wait_until(fun() -> catch do_verify_result(Node, Op) end,
-                               ok,
+                               [],
                                #{
                                  time_left => timer:seconds(20),
                                  name => verify_result
@@ -55,14 +55,14 @@ do_verify_result(Node, Op) ->
         {VerifyNode, DbNodes1, should_belong(Op)},
         {Node, DbNodes1, true},
         {VerifyNode, DbNodes2, true}],
-    [case lists:member(Element, List) of
+    Results = [case lists:member(Element, List) of
          ShouldBelong ->
-             ok;
+             [];
          _ ->
              ct:pal("~p has ~p~n~p has ~p~n", [Node, DbNodes1, VerifyNode, DbNodes2]),
-             error({check_failed, Check})
+             [Check]
      end || Check = {Element, List, ShouldBelong} <- Checks],
-    ok.
+    lists:append(Results).
 
 should_belong(add) -> true;
 should_belong(remove) -> false.
