@@ -59,7 +59,7 @@ do_verify_result(Node, Op) ->
          ShouldBelong ->
              [];
          _ ->
-             ct:pal("~p has ~p~n~p has ~p~n", [Node, DbNodes1, VerifyNode, DbNodes2]),
+             ct:log("~p has ~p~n~p has ~p~n", [Node, DbNodes1, VerifyNode, DbNodes2]),
              [Check]
      end || Check = {Element, List, ShouldBelong} <- Checks],
     lists:append(Results).
