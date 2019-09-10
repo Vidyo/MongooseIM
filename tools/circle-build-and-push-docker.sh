@@ -45,3 +45,4 @@ docker build -f Dockerfile.member -t ${IMAGE_TAG} \
 docker login -u ${DOCKERHUB_USER} -p ${DOCKERHUB_PASS}
 
 docker push ${IMAGE_TAG}
+#test
