@@ -28,13 +28,13 @@
 -define(CTL_RELOAD_OUTPUT_PREFIX,
         "done").
 
-backup_ejabberd_config_file(Node, Config) ->
-    {ok, _} = rpc(Node, file, copy, [node_cfg(Node, current, Config),
-                                     node_cfg(Node, backup, Config)]).
+backup_ejabberd_config_file(#{node := Node} = RPCSpec, Config) ->
+    {ok, _} = rpc(RPCSpec, file, copy, [node_cfg(Node, current, Config),
+                                        node_cfg(Node, backup, Config)]).
 
-restore_ejabberd_config_file(Node, Config) ->
-    ok = rpc(Node, file, rename, [node_cfg(Node, backup, Config),
-                                  node_cfg(Node, current, Config)]).
+restore_ejabberd_config_file(#{node := Node} = RPCSpec, Config) ->
+    ok = rpc(RPCSpec, file, rename, [node_cfg(Node, backup, Config),
+                                     node_cfg(Node, current, Config)]).
 
 restart_ejabberd_node(Node) ->
     %% Node restarts might take a long time -> long timeout.
