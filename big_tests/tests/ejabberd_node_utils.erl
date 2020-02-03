@@ -80,10 +80,10 @@ restart_application(Node, ApplicationName) ->
 
 -spec backup_config_file(ct_config()) -> ct_config().
 backup_config_file(Config) ->
-    Node = ct:get_config({hosts, mim, node}),
+    Node = distributed_helper:mim(),
     backup_config_file(Node, Config).
 
--spec backup_config_file(node(), ct_config()) -> ct_config().
+-spec backup_config_file(distributed_helper:rpc_spec(), ct_config()) -> ct_config().
 backup_config_file(Node, Config) ->
     {ok, _} = call_fun(Node, file, copy, [current_config_path(Node, Config),
                                           backup_config_path(Node, Config)]).
@@ -103,7 +103,7 @@ call_fun(M, F, A) ->
     Node = distributed_helper:mim(),
     call_fun(Node, M, F, A).
 
--spec call_fun(distributed_helper:rpc_spec() | node(), module(), atom(), []) ->
+-spec call_fun(distributed_helper:rpc_spec(), module(), atom(), []) ->
     term() | {badrpc, term()}.
 call_fun(Node, M, F, A) ->
     distributed_helper:rpc(Node, M, F, A).
