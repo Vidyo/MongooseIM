@@ -44,7 +44,8 @@
          xmpp_bounce_message/2,
          xmpp_send_element/3]).
 
--export([roster_get_jid_info/4]).
+-export([roster_get/3,
+         roster_get_jid_info/4]).
 
 -export([is_muc_room_owner/4,
          can_access_identity/4,
@@ -77,6 +78,14 @@
 
 -export([get_mam_pm_gdpr_data/3,
          get_mam_muc_gdpr_data/3]).
+
+-export([disco_info/5,
+         disco_local_features/6,
+         disco_local_identity/6,
+         disco_local_items/6,
+         disco_sm_features/6,
+         disco_sm_identity/6,
+         disco_sm_items/6]).
 
 -spec auth_failed(Server, Username) -> Result when
     Server :: jid:server(),
@@ -488,6 +497,15 @@ xmpp_send_element(Server, Acc, El) ->
 
 %% Roster related hooks
 
+%%% @doc The `roster_get' hook is called to extract user's roster.
+-spec roster_get(Server, Acc, User) -> Result when
+    Server :: jid:lserver(),
+    Acc :: mongoose_acc:t(),
+    User :: jid:luser(),
+    Result :: mongoose_acc:t().
+roster_get(Server, Acc, User) ->
+    ejabberd_hooks:run_fold(roster_get, Server, Acc, [{User, Server}]).
+
 %%% @doc The `roster_get_jid_info' hook is called to determine the subscription state between a given pair of users.
 %%% The hook handlers need to expect following arguments:
 %%% * Acc with an initial value of {none, []},
@@ -835,3 +853,98 @@ get_mam_pm_gdpr_data(HookServer, InitialValue, JID) ->
       Result :: ejabberd_gen_mam_archive:mam_muc_gdpr_data().
 get_mam_muc_gdpr_data(HookServer, InitialValue, JID) ->
     ejabberd_hooks:run_fold(get_mam_muc_gdpr_data, HookServer, InitialValue, [JID]).
+
+%% Discovery related hooks
+
+%%% @doc `disco_info' hook is called to extract information about the server.
+-spec disco_info(Server, Acc, Module, Node, Lang) -> Result when
+    Server :: jid:server(),
+    Acc :: [exml:element()],
+    Module :: module(),
+    Node :: binary(),
+    Lang :: ejabberd:lang(),
+    Result :: [exml:element()].
+disco_info(Server, Acc, Module, Node, Lang) ->
+    ejabberd_hooks:run_fold(disco_info, Server, Acc,
+                            [Server, Module, Node, Lang]).
+
+%%% @doc `disco_local_features' hook is called to extract features offered by the server.
+-spec disco_local_features(Server, Acc, From, To, Node, Lang) -> Result when
+    Server :: jid:server(),
+    Acc :: empty | {error, any()} | {result, [exml:element()]},
+    From :: jid:jid(),
+    To :: jid:jid(),
+    Node :: binary(),
+    Lang :: ejabberd:lang(),
+    Result :: {error, any()} | {result, [exml:element()]}.
+disco_local_features(Server, Acc, From, To, Node, Lang) ->
+    ejabberd_hooks:run_fold(disco_local_features,
+                            Server,
+                            Acc,
+                            [From, To, Node, Lang]).
+
+%%% @doc `disco_local_items' hook is called to extract items associated with the server.
+-spec disco_local_items(Server, Acc, From, To, Node, Lang) -> Result when
+    Server :: jid:server(),
+    Acc :: empty | {result, [exml:element()]} | {error, any()},
+    From :: jid:jid(),
+    To :: jid:jid(),
+    Node :: binary(),
+    Lang :: ejabberd:lang(),
+    Result :: {result, [exml:element()]} | {error, any()}.
+disco_local_items(Server, Acc, From, To, Node, Lang) ->
+    ejabberd_hooks:run_fold(disco_local_items,
+                            Server,
+                            Acc,
+                            [From, To, Node, Lang]).
+
+%%% @doc `disco_local_identity' hook is called to get the identity of the server.
+-spec disco_local_identity(Server :: jid:server(),
+                           Acc :: [exml:element()],
+                           From :: jid:jid(),
+                           To :: jid:jid(),
+                           Node :: binary(),
+                           Lang :: ejabberd:lang()) -> [exml:element()].
+disco_local_identity(Server, Acc, From, To, Node, Lang) ->
+    ejabberd_hooks:run_fold(disco_local_identity,
+                            Server,
+                            Acc,
+                            [From, To, Node, Lang]).
+
+-spec disco_sm_features(Server, Acc, From, To, Node, Lang) -> Result when
+    Server :: jid:server(),
+    Acc :: empty | {error, any()} | {result, [exml:element()]},
+    From :: jid:jid(),
+    To :: jid:jid(),
+    Node :: binary(),
+    Lang :: ejabberd:lang(),
+    Result :: {error, any()} | {result, [exml:element()]}.
+disco_sm_features(Server, Acc, From, To, Node, Lang) ->
+    ejabberd_hooks:run_fold(disco_local_features,
+                            Server,
+                            Acc,
+                            [From, To, Node, Lang]).
+
+-spec disco_sm_identity(Server :: jid:server(),
+                        Acc :: [exml:element()],
+                        From :: jid:jid(),
+                        To :: jid:jid(),
+                        Node :: mod_pubsub:nodeId(),
+                        Lang :: ejabberd:lang()) -> [exml:element()].
+disco_sm_identity(Server, Acc, From, To, Node, Lang) ->
+    ejabberd_hooks:run_fold(disco_sm_identity,
+                            Server,
+                            Acc,
+                            [From, To, Node, Lang]).
+
+-spec disco_sm_items(Server :: jid:server(),
+                     Acc :: empty | {result, [exml:element()]} | {error, any()},
+                     From :: jid:jid(),
+                     To :: jid:jid(),
+                     Node :: binary(),
+                     Lang :: ejabberd:lang()) -> {error, any()} | {result, [exml:element()]}.
+disco_sm_items(Server, Acc, From, To, Node, Lang) ->
+    ejabberd_hooks:run_fold(disco_sm_items,
+                            Server,
+                            Acc,
+                            [From, To, Node, Lang]).
