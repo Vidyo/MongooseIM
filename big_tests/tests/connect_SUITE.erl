@@ -43,6 +43,7 @@ all() ->
     [
      {group, session_replacement},
      {group, security},
+     {group, proxy_protocol},
      %% these groups must be last, as they really... complicate configuration
      {group, fast_tls},
      {group, just_tls}
@@ -70,7 +71,8 @@ groups() ->
                                        tls_authenticate_compression,
                                        auth_compression_bind_session,
                                        auth_bind_compression_session,
-                                       bind_server_generated_resource]},
+                                       bind_server_generated_resource,
+                                       cannot_connect_with_proxy_header]},
           {just_tls, tls_groups()},
           {fast_tls, tls_groups()},
           {session_replacement, [], [
@@ -81,7 +83,9 @@ groups() ->
           {security, [], [
                           return_proper_stream_error_if_service_is_not_hidden,
                           close_connection_if_service_type_is_hidden
-                         ]}
+                         ]},
+          {proxy_protocol, [], [cannot_connect_without_proxy_header,
+                                connect_with_proxy_header]}
         ],
     ct_helper:repeat_all_until_all_ok(G).
 
@@ -166,6 +170,10 @@ init_per_group(fast_tls,Config)->
     [{tls_module, fast_tls} | Config];
 init_per_group(session_replacement, Config) ->
     Config;
+init_per_group(proxy_protocol, Config) ->
+    ejabberd_node_utils:modify_config_file([{tls_config, "{proxy_protocol, true},"}], Config),
+    ejabberd_node_utils:restart_application(mongooseim),
+    Config;
 init_per_group(_, Config) ->
     Config.
 
@@ -201,6 +209,21 @@ end_per_testcase(CaseName, Config) ->
 %%--------------------------------------------------------------------
 %% Tests
 %%--------------------------------------------------------------------
+send_proxy_header(Conn, UnusedFeatures) ->
+    Header = ranch_proxy_header:header(proxy_info()),
+    escalus_connection:send_raw(Conn, iolist_to_binary(Header)),
+    {Conn, UnusedFeatures}.
+
+proxy_info() ->
+    #{version => 2,
+      command => proxy,
+      transport_family => ipv4,
+      transport_protocol => stream,
+      src_address => {1, 2, 3, 4},
+      src_port => 444,
+      dest_address => {192, 168, 0, 1},
+      dest_port => 443
+     }.
 
 bad_xml(Config) ->
     %% given
@@ -663,6 +686,41 @@ close_connection_if_service_type_is_hidden(_Config) ->
         5000 ->
             ct:fail(connection_not_closed)
     end.
+
+cannot_connect_with_proxy_header(Config) ->
+    %% GIVEN proxy protocol is disabled
+    UserSpec = escalus_users:get_userspec(Config, alice),
+
+    %% WHEN
+    ConnectionSteps = [{?MODULE, send_proxy_header}, start_stream],
+    ConnResult = escalus_connection:start(UserSpec, ConnectionSteps),
+
+    %% THEN
+    ?assertMatch({error, {connection_step_failed, _, _}}, ConnResult).
+
+cannot_connect_without_proxy_header(Config) ->
+    %% GIVEN proxy protocol is enabled
+    UserSpec = escalus_users:get_userspec(Config, alice),
+
+    %% WHEN
+    ConnResult = escalus_connection:start(UserSpec, [start_stream]),
+
+    %% THEN
+    ?assertMatch({error, {connection_step_failed, _, _}}, ConnResult).
+
+connect_with_proxy_header(Config) ->
+    %% GIVEN proxy protocol is enabled
+    UserSpec = escalus_users:get_userspec(Config, alice),
+
+    %% WHEN
+    ConnectionSteps = [{?MODULE, send_proxy_header}, start_stream, stream_features,
+                       authenticate, bind, session],
+    {ok, Conn, Features} = escalus_connection:start(UserSpec, ConnectionSteps),
+
+    %% THEN
+    SessionInfo = mongoose_helper:get_session_info(mim(), Conn),
+    #{src_address := IPAddr, src_port := Port} = proxy_info(),
+    ?assertMatch({IPAddr, Port}, proplists:get_value(ip, SessionInfo)).
 
 %%--------------------------------------------------------------------
 %% Internal functions
