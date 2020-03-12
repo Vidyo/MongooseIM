@@ -209,21 +209,6 @@ end_per_testcase(CaseName, Config) ->
 %%--------------------------------------------------------------------
 %% Tests
 %%--------------------------------------------------------------------
-send_proxy_header(Conn, UnusedFeatures) ->
-    Header = ranch_proxy_header:header(proxy_info()),
-    escalus_connection:send_raw(Conn, iolist_to_binary(Header)),
-    {Conn, UnusedFeatures}.
-
-proxy_info() ->
-    #{version => 2,
-      command => proxy,
-      transport_family => ipv4,
-      transport_protocol => stream,
-      src_address => {1, 2, 3, 4},
-      src_port => 444,
-      dest_address => {192, 168, 0, 1},
-      dest_port => 443
-     }.
 
 bad_xml(Config) ->
     %% given
@@ -716,11 +701,15 @@ connect_with_proxy_header(Config) ->
     ConnectionSteps = [{?MODULE, send_proxy_header}, start_stream, stream_features,
                        authenticate, bind, session],
     {ok, Conn, Features} = escalus_connection:start(UserSpec, ConnectionSteps),
+    % make sure the session is present
+    escalus:send(Conn, escalus_stanza:presence(<<"available">>)),
+    escalus:assert(is_presence, escalus:wait_for_stanza(Conn)),
 
     %% THEN
     SessionInfo = mongoose_helper:get_session_info(mim(), Conn),
     #{src_address := IPAddr, src_port := Port} = proxy_info(),
-    ?assertMatch({IPAddr, Port}, proplists:get_value(ip, SessionInfo)).
+    ?assertMatch({IPAddr, Port}, proplists:get_value(ip, SessionInfo)),
+    escalus_connection:stop(Conn).
 
 %%--------------------------------------------------------------------
 %% Internal functions
@@ -858,3 +847,19 @@ pipeline_connect(UserSpec) ->
 
     escalus_connection:send(Conn, [Stream, Auth, AuthStream, Bind, Session]),
     Conn.
+
+send_proxy_header(Conn, UnusedFeatures) ->
+    Header = ranch_proxy_header:header(proxy_info()),
+    escalus_connection:send_raw(Conn, iolist_to_binary(Header)),
+    {Conn, UnusedFeatures}.
+
+proxy_info() ->
+    #{version => 2,
+      command => proxy,
+      transport_family => ipv4,
+      transport_protocol => stream,
+      src_address => {1, 2, 3, 4},
+      src_port => 444,
+      dest_address => {192, 168, 0, 1},
+      dest_port => 443
+     }.
