@@ -56,7 +56,7 @@ start_ping_timer(HandlerState, Server) ->
     ejabberd_c2s_info_handler:call_after(PingInterval * 1000, self(), mod_ping, send_ping).
 
 route_ping_iq(JID, Server) ->
-    PingReqTimeout = gen_mod:get_module_opt(Server, ?MODULE, ping_req_timeout,
+    PingReqTimeout = 1000 * gen_mod:get_module_opt(Server, ?MODULE, ping_req_timeout,
                                             ?DEFAULT_PING_REQ_TIMEOUT),
     IQ = #iq{type = get,
              sub_el = [#xmlel{name = <<"ping">>,
