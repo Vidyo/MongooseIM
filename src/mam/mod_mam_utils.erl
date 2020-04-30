@@ -47,7 +47,8 @@
          decode_optimizations/1,
          form_borders_decode/1,
          form_decode_optimizations/1,
-         is_mam_result_message/1]).
+         is_mam_result_message/1,
+         features/2]).
 
 %% Forms
 -export([
@@ -126,6 +127,7 @@
 
 -include("mod_mam.hrl").
 -include("mongoose_rsm.hrl").
+-include("mongoose_ns.hrl").
 
 -define(MAYBE_BIN(X), (is_binary(X) orelse (X) =:= undefined)).
 
@@ -677,6 +679,11 @@ is_mam_namespace(?NS_MAM_04) -> true;
 is_mam_namespace(?NS_MAM_06) -> true;
 is_mam_namespace(_)          -> false.
 
+features(Module, Host) ->
+    [?NS_MAM_04, ?NS_MAM_06] ++ case has_message_retraction(Module, Host) of
+                                    true -> [?NS_RETRACT];
+                                    false -> []
+                                end.
 
 %% -----------------------------------------------------------------------
 %% Forms
@@ -797,6 +804,8 @@ packet_to_search_body(Module, Host, Packet) ->
 -spec has_full_text_search(Module :: mod_mam | mod_mam_muc, Host :: jid:server()) -> boolean().
 has_full_text_search(Module, Host) ->
     gen_mod:get_module_opt(Host, Module, full_text_search, true).
+
+%% Message retraction
 
 -spec has_message_retraction(Module :: mod_mam | mod_mam_muc, Host :: jid:server()) -> boolean().
 has_message_retraction(Module, Host) ->
