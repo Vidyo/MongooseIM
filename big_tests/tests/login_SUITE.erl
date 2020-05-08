@@ -118,6 +118,16 @@ end_per_suite(Config) ->
     escalus_fresh:clean(),
     escalus:end_per_suite(Config).
 
+init_per_group(login_digest, Config) ->
+    set_store_password(plain),
+    case mongoose_helper:supports_sasl_module(cyrsasl_digest) of
+        false ->
+            set_store_password(scram),
+            {skip, "digest password type not supported"};
+        true ->
+            Config1 = configure_digest(Config),
+            escalus:create_users(Config1, escalus:get_users([alice, bob]))
+    end;
 init_per_group(GroupName, Config) when
       GroupName == login_scram; GroupName == login_scram_store_plain ->
     case are_sasl_scram_modules_supported() of
@@ -134,7 +144,6 @@ init_per_group(login_scram_tls, Config) ->
             {skip, "scram password type not supported"};
         true ->
             Config1 = config_ejabberd_node_tls(Config),
-            config_password_format(login_scram),
             Config2 = create_tls_users(Config1),
             assert_password_format(scram, Config2)
     end;
@@ -148,26 +157,20 @@ init_per_group(login_specific_scram, Config) ->
 init_per_group(_GroupName, Config) ->
     escalus:create_users(Config, escalus:get_users([alice, bob])).
 
+end_per_group(login_digest, Config) ->
+    restore_config(Config),
+    set_store_password(scram),
+    escalus:delete_users(Config, escalus:get_users([alice, bob]));
 end_per_group(GroupName, Config) when
     GroupName == login_scram; GroupName == login_specific_scram ->
-    set_store_password(plain),
+    set_store_password(scram),
     escalus:delete_users(Config, escalus:get_users([alice, bob, neustradamus]));
 end_per_group(login_scram_tls, Config) ->
     restore_config(Config),
-    set_store_password(plain),
     delete_tls_users(Config);
 end_per_group(_GroupName, Config) ->
     escalus:delete_users(Config, escalus:get_users([alice, bob])).
 
-init_per_testcase(CaseName, Config) when
-      CaseName =:= log_one_digest; CaseName =:= log_non_existent_digest ->
-    case mongoose_helper:supports_sasl_module(cyrsasl_digest) of
-        false ->
-            {skip, "digest password type not supported"};
-        true ->
-            Config1 = configure_digest(Config),
-            escalus:init_per_testcase(CaseName, Config1)
-    end;
 init_per_testcase(CaseName, Config) when
       CaseName =:= log_one_scram_sha1; CaseName =:= log_non_existent_scram ->
     case mongoose_helper:supports_sasl_module(cyrsasl_scram_sha1) of
@@ -193,10 +196,6 @@ init_per_testcase(CaseName, Config) ->
 
 end_per_testcase(message_zlib_limit, Config) ->
     escalus:delete_users(Config, escalus:get_users([hacker]));
-end_per_testcase(CaseName, Config) when
-    CaseName =:= log_one_digest; CaseName =:= log_non_existent_digest ->
-    restore_config(Config),
-    escalus:end_per_testcase(CaseName, Config);
 end_per_testcase(CaseName, Config) ->
     escalus:end_per_testcase(CaseName, Config).
 
@@ -395,6 +394,7 @@ configure_digest(Config) ->
     ejabberd_node_utils:backup_config_file(Config1),
     ejabberd_node_utils:modify_config_file([{sasl_mechanisms, "{sasl_mechanisms, [cyrsasl_digest]}."}], Config1),
     ejabberd_node_utils:restart_application(mongooseim),
+    set_store_password(plain),
     Config1.
 
 restore_config(Config) ->

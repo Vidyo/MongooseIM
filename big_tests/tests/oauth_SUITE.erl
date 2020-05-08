@@ -117,7 +117,7 @@ init_per_group(GroupName, Config0) ->
 end_per_group(cleanup, Config) ->
     escalus:delete_users(Config, escalus:get_users([alice]));
 end_per_group(_GroupName, Config) ->
-    set_store_password(plain),
+    set_store_password(scram),
     escalus:delete_users(Config, escalus:get_users([bob, alice])).
 
 init_per_testcase(check_for_oauth_with_mod_auth_token_not_loaded = CaseName, Config) ->
