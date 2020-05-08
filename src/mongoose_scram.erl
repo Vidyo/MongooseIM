@@ -107,9 +107,8 @@ mask(Key, Data) ->
 
 enabled(Host) ->
     case ejabberd_auth:get_opt(Host, password_format) of
-        scram -> true;
-        {scram, _ScramSha} -> true;
-        _ -> false
+        plain -> false;
+        _ -> true
     end.
 
 enabled(Host, cyrsasl_scram_sha1)   -> is_password_format_allowed(Host, sha);
