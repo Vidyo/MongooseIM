@@ -282,9 +282,10 @@ init_per_testcase(check_password_hash, Config) ->
         true ->
             {skip, not_fully_supported_with_ldap};
         false ->
+            Config1 = backup_auth_config(Config),
             set_store_password(plain),
-            Config1 = escalus:create_users(Config, escalus:get_users([carol])),
-            escalus:init_per_testcase(check_password_hash, Config1)
+            Config2 = escalus:create_users(Config1, escalus:get_users([carol])),
+            escalus:init_per_testcase(check_password_hash, Config2)
     end;
 init_per_testcase(delete_old_users, Config) ->
     {_, AuthMods} = lists:keyfind(ctl_auth_mods, 1, Config),
@@ -309,7 +310,7 @@ end_per_testcase(delete_old_users, Config) ->
         end, Users),
     escalus:end_per_testcase(delete_old_users, Config);
 end_per_testcase(check_password_hash, Config) ->
-    set_store_password(scram),
+    restore_auth_config(Config),
     escalus:delete_users(Config, escalus:get_users([carol]));
 end_per_testcase(CaseName, Config) ->
     %% Because kick_session fails with unexpected stanza received:
@@ -1430,3 +1431,13 @@ set_store_password(Type) ->
     AuthOpts = rpc(mim(), ejabberd_config, get_local_option, [{auth_opts, XMPPDomain}]),
     NewAuthOpts = lists:keystore(password_format, 1, AuthOpts, {password_format, Type}),
     rpc(mim(), ejabberd_config, add_local_option, [{auth_opts, XMPPDomain}, NewAuthOpts]).
+
+backup_auth_config(Config) ->
+    XMPPDomain = escalus_ejabberd:unify_str_arg(ct:get_config({hosts, mim, domain})),
+    AuthOpts = rpc(mim(), ejabberd_config, get_local_option, [{auth_opts, XMPPDomain}]),
+    [{auth_opts, AuthOpts} | Config].
+
+restore_auth_config(Config) ->
+    XMPPDomain = escalus_ejabberd:unify_str_arg(ct:get_config({hosts, mim, domain})),
+    AuthOpts = proplists:get_value(auth_opts, Config),
+    rpc(mim(), ejabberd_config, add_local_option, [{auth_opts, XMPPDomain}, AuthOpts]).

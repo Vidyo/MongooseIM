@@ -112,10 +112,13 @@ suite() ->
 %%--------------------------------------------------------------------
 
 init_per_suite(Config) ->
-    escalus:init_per_suite(Config).
+    Config1 = backup_auth_config(Config),
+    set_store_password(scram),
+    escalus:init_per_suite(Config1).
 
 end_per_suite(Config) ->
     escalus_fresh:clean(),
+    restore_auth_config(Config),
     escalus:end_per_suite(Config).
 
 init_per_group(login_digest, Config) ->
@@ -381,6 +384,16 @@ message_zlib_limit(Config) ->
 %%--------------------------------------------------------------------
 %% Helpers
 %%--------------------------------------------------------------------
+
+backup_auth_config(Config) ->
+    XMPPDomain = escalus_ejabberd:unify_str_arg(ct:get_config({hosts, mim, domain})),
+    AuthOpts = rpc(mim(), ejabberd_config, get_local_option, [{auth_opts, XMPPDomain}]),
+    [{auth_opts, AuthOpts} | Config].
+
+restore_auth_config(Config) ->
+    XMPPDomain = escalus_ejabberd:unify_str_arg(ct:get_config({hosts, mim, domain})),
+    AuthOpts = proplists:get_value(auth_opts, Config),
+    rpc(mim(), ejabberd_config, add_local_option, [{auth_opts, XMPPDomain}, AuthOpts]).
 
 config_ejabberd_node_tls(Config) ->
     Config1 = ejabberd_node_utils:init(Config),
