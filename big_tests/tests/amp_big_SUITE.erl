@@ -332,6 +332,7 @@ notify_deliver_to_offline_user_test(Config) ->
                   _ -> client_receives_nothing(Alice)
               end
       end),
+    wait_until_no_session(FreshConfig, alice),
     case is_offline_storage_working(Config) of
         true -> user_has_incoming_offline_message(FreshConfig, bob, <<"A message in a bottle...">>);
         false -> user_has_no_incoming_offline_messages(FreshConfig, bob)
@@ -536,6 +537,7 @@ error_deliver_to_offline_user_test(Config) ->
                       check_offline_storage(Alice, Config)
               end
       end),
+    wait_until_no_session(FreshConfig, alice),
     case is_offline_storage_working(Config) andalso not lists:member(Rule, Rules) of
         true -> user_has_incoming_offline_message(FreshConfig, bob, <<"A message in a bottle...">>);
         false -> user_has_no_incoming_offline_messages(FreshConfig, bob)
@@ -599,11 +601,11 @@ drop_deliver_to_offline_user_test(Config) ->
                          _ -> stored
                      end, drop},
     Rules = rules(Config, [Rule]),
+    Message = <<"A message in a bottle...">>,
     escalus:fresh_story(
       FreshConfig, [{alice, 1}],
       fun(Alice) ->
               %% given
-              Message = <<"A message in a bottle...">>,
               BobJid = escalus_users:get_jid(FreshConfig, bob),
               Msg = amp_message_to(BobJid, Rules, Message),
 
@@ -615,15 +617,13 @@ drop_deliver_to_offline_user_test(Config) ->
                    ?config(offline_storage, Config) /= offline_failure of
                   true -> client_receives_nothing(Alice);
                   false -> client_receives_generic_error(Alice, <<"500">>, <<"wait">>)
-              end,
-
-              % then
-              case is_offline_storage_working(Config) andalso not lists:member(Rule, Rules) of
-                  true -> user_has_incoming_offline_message(FreshConfig, bob,
-                                                            Message);
-                  false -> user_has_no_incoming_offline_messages(FreshConfig, bob)
               end
-      end).
+      end),
+    wait_until_no_session(FreshConfig, alice),
+    case is_offline_storage_working(Config) andalso not lists:member(Rule, Rules) of
+        true -> user_has_incoming_offline_message(FreshConfig, bob, Message);
+        false -> user_has_no_incoming_offline_messages(FreshConfig, bob)
+    end.
 
 drop_deliver_to_stranger_test(Config) ->
     escalus:fresh_story(
@@ -667,6 +667,23 @@ last_rule_applies_test(Config) ->
       end).
 
 %% Internal
+
+wait_until_no_session(FreshConfig, User) ->
+    U = escalus_users:get_username(FreshConfig, User),
+    S = escalus_users:get_server(FreshConfig, User),
+    wait_until_no_session(U, S, 5000).
+
+wait_until_no_session(U, S, Timeout) ->
+    case length(rpc(mim(), ejabberd_sm, get_user_resources, [U, S])) of
+        0 ->
+            ok;
+        _ when Timeout > 0 ->
+            ct:log("Waiting ~p ms for MongooseIM to close the sessions for ~s@~s", [Timeout, U, S]),
+            ct:sleep(1000),
+            wait_until_no_session(U, S, Timeout - 1000);
+        _ ->
+            ct:fail("MongooseIM failed to close the session for ~s@~s")
+    end.
 
 user_has_no_incoming_offline_messages(FreshConfig, UserName) ->
     escalus:fresh_story(
