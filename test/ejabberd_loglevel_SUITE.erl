@@ -10,7 +10,6 @@
 
 all() ->
     [
-     init_test,
      set_get_loglevel,
      set_custom_loglevel,
      log_at_every_level,
@@ -33,9 +32,6 @@ end_per_testcase(_TestCase, _Config) ->
 %% Tests
 %%
 
-init_test(_) ->
-    ejabberd_loglevel:init().
-
 set_get_loglevel(C) ->
     %% given
     {ok, Backend} = ejabberd_loglevel_running(),
@@ -48,9 +44,9 @@ set_get_loglevel(C) ->
 
 set_get_loglevel(_, Backend, Expected, Level) ->
     %% when
-    [{Backend, ok}] = ejabberd_loglevel:set(Level),
+    [{Backend, ok}] = mongoose_logs:set_global_loglevel(Level),
     %% then
-    [{Backend, Expected}] = ejabberd_loglevel:get().
+    [{Backend, Expected}] = mongoose_logs:get_handlers_loglevel().
 
 set_custom_loglevel(_) ->
     %% given
@@ -59,14 +55,14 @@ set_custom_loglevel(_) ->
     ExampleLvl = info,
     %% when setting a custom log level for some module
     %% the operation succeeds
-    [{Backend, ok}] = ejabberd_loglevel:set_custom(ExampleMod, ExampleLvl).
+    [{Backend, ok}] = mongoose_logs:set_custom(ExampleMod, ExampleLvl).
 
 log_at_every_level(C) ->
     %% given
     ejabberd_loglevel_running(),
     [ begin
           %% when
-          ejabberd_loglevel:set(L),
+          get_handlers_loglevel:set_global_loglevel(L),
           %% then
           log_at_level(C, {L, LName})
       end || {L, LName} <- levels() ].
@@ -101,8 +97,8 @@ log_at_level(C, {L, _}) ->
 log_at_custom_level(C) ->
     %% given logging on custom log level for the helper module
     ejabberd_loglevel_running(),
-    ejabberd_loglevel:set(1),
-    ejabberd_loglevel:set_custom(ejabberd_loglevel_SUITE_helper, 5),
+    mongoose_logs:set_global_loglevel(1),
+    mongoose_logs:set_custom(ejabberd_loglevel_SUITE_helper, 5),
     %% when we log from here and from the helper module
     Before = get_log("log/ejabberd.log"),
     log(C, debug, "suite", []),
@@ -132,23 +128,30 @@ levels() ->
      {5, debug}].
 
 ejabberd_loglevel_running() ->
-    application:load(lager),
-    BackendName = lager_file_backend,
     File = "log/ejabberd.log",
+    HandlerID = disk_log,
+    HandlerModule = logger_disk_log_h,
+    HandlerConfig = #{config => #{
+                        file => File,
+                        type => wrap,
+                        max_no_files => 5,
+                        max_no_bytes => 2097152
+                       },
+                      level => info,
+                      formatter => {logger_formatter, #{
+                                      depth => 12,
+                                      chars_limit => 1024
+                                     }
+                                   }
+                     },
+    ok = logger:add_handler(HandlerID, HandlerModule, HandlerConfig),
     Before = get_log(File),
-    Backend = {BackendName, [{file, File},
-                             {level, info},
-                             {size, 2097152},
-                             {date, "$D0"},
-                             {count, 5}]},
-    application:set_env(lager, handlers, [Backend]),
-    ejabberd_loglevel:init(),
-    FileBackend = {BackendName, File},
+    FileBackend = {HandlerID, File},
     true = timeout /= get_at_least_n_log_lines(File, length(Before) + 1, timer:seconds(5)),
     {ok, FileBackend}.
 
 log(_, LevelName, Fmt, Args) ->
-    lager:log(LevelName, self(), Fmt, Args).
+    logger:log(LevelName, Fmt, Args, #{pid => self()}).
 
 levels_less_than_or_equal_to(L) ->
     [ ?a2b(LevelName) || {ThisL, LevelName} <- levels(), ThisL =< L ].
