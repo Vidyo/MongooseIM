@@ -40,6 +40,7 @@
                   sasl,
                   ssl,
                   stdlib,
+                  syslogger,
                   jid,
                   fast_tls,
                   tirerl,
