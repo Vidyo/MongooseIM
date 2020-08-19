@@ -2,8 +2,6 @@
 %% Source http://stackoverflow.com/questions/3768197/erlang-ioformatting-a-binary-to-hex
 -module(bin_to_hex).
 
--compile([native, {hipe, [o3]}, {inline, [hex/1]}]).
-
 -export([bin_to_hex/1, hex_to_bin/1]).
 
 bin_to_hex(B) when is_binary(B) ->
