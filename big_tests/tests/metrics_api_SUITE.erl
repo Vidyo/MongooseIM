@@ -270,13 +270,33 @@ find(CounterName, CounterList) ->
         {CounterName, Val} -> Val end.
 
 fetch_counter_value(Counter, Config) ->
-    Params = [{metric, atom_to_list(Counter)},
-              {host, ct:get_config({hosts, mim, domain})}],
-    {_, _, _, Vars, _} = katt_helper:run(metric, Config, Params),
-    HostValue = proplists:get_value("value_host", Vars),
-    HostValueList = proplists:get_value("value_host_list", Vars),
-    TotalValue = proplists:get_value("value_total", Vars),
-    TotalValueList = proplists:get_value("value_total_list", Vars),
+    Metric = atom_to_list(Counter),
+    MetricB = list_to_binary(Metric), %todo refactor types
+    Host = ct:get_config({hosts, mim, domain}),
+
+    Result = metrics_helper:request(<<"GET">>,
+                                    unicode:characters_to_list(["/metrics/host/", Host, "/", Metric])),
+    {_S, _H, B} = Result, %todo validate more all these cases if needed
+    metrics_helper:assert_status(200, Result),
+    #{<<"metric">> := #{<<"count">> := HostValue}} = B,
+
+    Result2 = metrics_helper:request(<<"GET">>,
+                                    unicode:characters_to_list(["/metrics/host/", Host])),
+    {_S2, _H2, B2} = Result2,
+    metrics_helper:assert_status(200, Result2),
+    #{<<"metrics">> := #{MetricB := #{<<"count">> := HostValueList}}} = B2,
+
+    Result3 = metrics_helper:request(<<"GET">>,
+                                     unicode:characters_to_list(["/metrics/all/", Metric])),
+    {_S3, _H3, B3} = Result3,
+    metrics_helper:assert_status(200, Result3),
+    #{<<"metric">> := #{<<"count">> := TotalValue}} = B3,
+
+    Result4 = metrics_helper:request(<<"GET">>, "/metrics/all/"),
+    {_S4, _H4, B4} = Result4,
+    metrics_helper:assert_status(200, Result4),
+    #{<<"metrics">> := #{MetricB := #{<<"count">> := TotalValueList}}} = B4,
+
     [HostValue, HostValueList, TotalValue, TotalValueList].
 
 %% @doc Fetch counter that is static.
@@ -316,22 +336,20 @@ fetch_global_counter_values(MetricKey, Counter, Config) ->
                                     unicode:characters_to_list(["/metrics/global/", Metric]),
                                     Port),
     metrics_helper:assert_status(200, Result),
-    {_S, H, {B}} = Result,
+    {_S, H, B} = Result,
+    #{<<"metric">> := #{MetricKey := Value}} = B,
     ?assertEqual(<<"application/json">>, proplists:get_value(<<"content-type">>, H)),
-    {ValueElem} = proplists:get_value(<<"metric">>, B),
-    Value = proplists:get_value(MetricKey, ValueElem),
-    ?assertEqual(1, length(B)),
+    ?assertEqual(1, maps:size(B)),
 
     Result2 = metrics_helper:request(<<"GET">>,
                                      unicode:characters_to_list(["/metrics/global/"]),
                                      Port),
     metrics_helper:assert_status(200, Result2),
-    {_S2, H2, {B2}} = Result2,
+    {_S2, H2, B2} = Result2,
     ?assertEqual(<<"application/json">>, proplists:get_value(<<"content-type">>, H2)),
-    {Metrics} = proplists:get_value(<<"metrics">>, B2),
-    {ValueElem2} = proplists:get_value(list_to_binary(Metric), Metrics),
-    ValueList = proplists:get_value(MetricKey, ValueElem2),
-    ?assertEqual(1, length(B)),
+    MetricB = list_to_binary(Metric),
+    #{<<"metrics">> := #{ MetricB := #{MetricKey := ValueList}}} = B2,
+    ?assertEqual(1, maps:size(B2)),
 
     [Value, ValueList].
 
