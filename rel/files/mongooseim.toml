@@ -226,7 +226,7 @@
 [shaper.mam_global_shaper]
   max_rate = 1000
 
-[acl.local]
+[[acl.local]]
   user_regexp = ""
 
 [access]
