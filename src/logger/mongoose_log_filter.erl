@@ -4,6 +4,7 @@
 -export([format_acc_filter/2]).
 -export([format_packet_filter/2]).
 -export([format_stacktrace_filter/2]).
+-export([format_toml_filter/2]).
 -export([preserve_acc_filter/2]).
 -export([filter_module/2]).
 
@@ -49,6 +50,11 @@ format_packet_filter(Event, _) ->
 format_stacktrace_filter(Event=#{msg := {report, Msg=#{stacktrace := S}}}, _) ->
     Event#{msg => {report, Msg#{stacktrace => format_stacktrace(S)} }};
 format_stacktrace_filter(Event, _) ->
+    Event.
+
+format_toml_filter(Event = #{msg := {report, Msg=#{toml_value := Value}}}, _) ->
+    Event#{msg => {report, Msg#{toml_value => format_term(Value)}}};
+format_toml_filter(Event, _) ->
     Event.
 
 format_acc(#{origin_pid := OriginPid, timestamp := TS, stanza := StanzaMap}) ->
