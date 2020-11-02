@@ -80,11 +80,6 @@ upsert_data_t(LUser, Host, NS, XML) ->
 make_xml_binary(NS2XML) ->
     [{NS, exml:to_binary(XML)} || {NS, XML} <- NS2XML].
 
-set_data_t(SLUser, LServer, NS, XML) ->
-    SNS = mongoose_rdbms:escape_string(NS),
-    SData = mongoose_rdbms:escape_string(XML),
-    rdbms_queries:set_private_data(LServer, SLUser, SNS, SData).
-
 multi_get_data(LUser, LServer, NS2Def) ->
     [get_data(LUser, LServer, NS, Default) || {NS, Default} <- NS2Def].
 
