@@ -1706,7 +1706,9 @@ handle_step(handle, _) ->
 handle_step(parse, Spec) when is_tuple(Spec) ->
     fun(Path, Value) ->
             ParsedValue = case Spec of
-                              #section{} when is_map(Value) ->
+                              #section{} = Spec when is_map(Value) ->
+                                  check_required_keys(Spec, Value),
+                                  validate_keys(Spec, Value),
                                   parse_section(Path, Value);
                               #list{} when is_list(Value) ->
                                   parse_list(Path, Value);
@@ -1731,8 +1733,9 @@ handle_step(validate, ParsedValue) ->
             ParsedValue
     end;
 handle_step(process, {ParsedValue, Spec}) ->
-    fun(_Path, _Value) ->
-            {process_value(ParsedValue, Spec), Spec}
+    fun(Path, _Value) ->
+            ProcessedValue = process(Path, ParsedValue, process_spec(Spec)),
+            {ProcessedValue, Spec}
     end;
 handle_step(process, V) ->
     fun(_, _) -> V end;
@@ -1743,6 +1746,17 @@ handle_step(format, {ParsedValue, Spec}) ->
 handle_step(format, V) ->
     fun(_, _) -> V end.
 
+check_required_keys(#section{required = all, items = Items}, Section) ->
+    ensure_keys(maps:keys(Items), Section);
+check_required_keys(#section{required = Required}, Section) ->
+    ensure_keys(Required, Section).
+
+validate_keys(#section{validate_keys = undefined}, _Section) -> ok;
+validate_keys(#section{validate_keys = Validator}, Section) ->
+    lists:foreach(fun(Key) ->
+                          mongoose_config_validator_toml:validate(b2a(Key), atom, Validator)
+                  end, maps:keys(Section)).
+
 validate(Value, #section{validate = Validator}) ->
     mongoose_config_validator_toml:validate_section(Value, Validator);
 validate(Value, #list{validate = Validator}) ->
@@ -1750,12 +1764,13 @@ validate(Value, #list{validate = Validator}) ->
 validate(Value, #option{type = Type, validate = Validator}) ->
     mongoose_config_validator_toml:validate(Value, Type, Validator).
 
-process_value(V, #section{process = undefined}) -> V;
-process_value(V, #list{process = undefined}) -> V;
-process_value(V, #option{process = undefined}) -> V;
-process_value(V, #section{process = Process}) -> Process(V);
-process_value(V, #list{process = Process}) -> Process(V);
-process_value(V, #option{process = Process}) -> Process(V).
+process_spec(#section{process = Process}) -> Process;
+process_spec(#list{process = Process}) -> Process;
+process_spec(#option{process = Process}) -> Process.
+
+process(_Path, V, undefined) -> V;
+process(_Path, V, F) when is_function(F, 1) -> F(V);
+process(Path, V, F) when is_function(F, 2) -> F(Path, V).
 
 convert(V, boolean) -> V;
 convert(V, binary) -> V;
@@ -1789,10 +1804,14 @@ format(Path, V, {config, Key}) ->
 format(Path, V, override) ->
     global = get_host(Path),
     [{override, V}];
-format([item|_], V, default) ->
+format([item|_] = Path, V, default) ->
+    format(Path, V, item);
+format([Key|_] = Path, V, default) ->
+    format(Path, V, {kv, b2a(Key)});
+format(_Path, V, {kv, Key}) ->
+    [{Key, V}];
+format(_Path, V, item) ->
     [V];
-format([Key|_], V, default) ->
-    [{b2a(Key), V}];
 format([Key|_], V, prepend_key) ->
     L = [b2a(Key) | tuple_to_list(V)],
     [list_to_tuple(L)];
