@@ -60,7 +60,13 @@
 -spec parse_file(FileName :: string()) -> state().
 parse_file(FileName) ->
     ParserModule = parser_module(filename:extension(FileName)),
-    ParserModule:parse_file(FileName).
+    try
+        ParserModule:parse_file(FileName)
+    catch
+        error:Errors ->
+            [?LOG_ERROR(Error) || Error <- Errors],
+            mongoose_config_utils:exit_or_halt("Could not load the TOML configuration file")
+    end.
 
 %% Only the TOML format is supported
 parser_module(".toml") -> mongoose_config_parser_toml.
