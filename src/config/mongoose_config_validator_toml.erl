@@ -280,21 +280,6 @@ validate([<<"iqdisc">>, <<"mod_time">>, <<"modules">>|_],
 validate([item, <<"routes">>, <<"mod_revproxy">>, <<"modules">>|_],
          [V]) ->
     validate_revproxy_route(V);
-validate([<<"listen_port">>, <<"mod_jingle_sip">>, <<"modules">>|_],
-         [{listen_port, V}]) ->
-    validate_network_port(V);
-validate([<<"local_host">>, <<"mod_jingle_sip">>, <<"modules">>|_],
-         [{local_host, V}]) ->
-    validate_network_address(V);
-validate([<<"proxy_host">>, <<"mod_jingle_sip">>, <<"modules">>|_],
-         [{proxy_host, V}]) ->
-    validate_network_address(V);
-validate([<<"proxy_port">>, <<"mod_jingle_sip">>, <<"modules">>|_],
-         [{proxy_port, V}]) ->
-    validate_network_port(V);
-validate([<<"sdp_origin">>, <<"mod_jingle_sip">>, <<"modules">>|_],
-         [{sdp_origin, V}]) ->
-    validate_ip_address(V);
 validate([<<"iqdisc">>, <<"mod_sic">>, <<"modules">>|_],
          [{iqdisc, V}]) ->
     validate_iqdisc(V);
@@ -388,6 +373,7 @@ validate(V, int_or_infinity, positive) -> validate_positive_integer_or_infinity(
 validate(V, string, url) -> validate_url(V);
 validate(V, string, domain_template) -> validate_domain_template(V);
 validate(V, string, ip_address) -> validate_ip_address(V);
+validate(V, string, network_address) -> validate_network_address(V);
 validate(V, string, non_empty) -> validate_non_empty_string(V);
 validate(V, string, dirname) -> validate_dirname(V);
 validate(V, atom, module) -> validate_module(V);
