@@ -373,22 +373,6 @@ validate([<<"search_index">>, <<"riak">>, <<"mod_vcard">>, <<"modules">>|_],
 validate([<<"search">>, <<"mod_vcard">>, <<"modules">>|_],
          [{search, V}]) ->
     validate_boolean(V);
-validate([<<"aff_changes">>, <<"mod_inbox">>, <<"modules">>|_],
-         [{aff_changes, V}]) ->
-    validate_boolean(V);
-validate([item, <<"groupchat">>, <<"mod_inbox">>, <<"modules">>|_],
-         [V]) ->
-    validate_groupchat_type(V);
-validate([<<"iqdisc">>, <<"mod_inbox">>, <<"modules">>|_],
-         [{iqdisc, V}]) ->
-    validate_iqdisc(V);
-validate([<<"remove_on_kicked">>, <<"mod_inbox">>, <<"modules">>|_],
-         [{remove_on_kicked, V}]) ->
-    validate_boolean(V);
-validate([item, <<"reset_markers">>, <<"mod_inbox">>, <<"modules">>|_],
-         [V]) ->
-    validate_chat_marker_type(V);
-
 validate(_Path, _Value) ->
     ok.
 
@@ -501,12 +485,6 @@ validate_ip_access({Access, IPMask}) ->
 
 validate_backend(Mod, Backend) ->
     validate_module(backend_module:backend_module(Mod, Backend)).
-
-validate_chat_marker_type(Type) ->
-    validate_enum(Type, [displayed, received, acknowledged]).
-
-validate_groupchat_type(Type) ->
-    validate_enum(Type, [muc, muclight]).
 
 validate_domain(Domain) when is_list(Domain) ->
     #jid{luser = <<>>, lresource = <<>>} = jid:from_binary(list_to_binary(Domain)),
