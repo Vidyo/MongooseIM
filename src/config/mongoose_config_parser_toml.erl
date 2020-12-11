@@ -137,11 +137,6 @@ module_opt([<<"redis">>, <<"mod_global_distrib">>|_] = Path, V) ->
     [{redis, Redis}];
 module_opt([<<"hosts_refresh_interval">>, <<"mod_global_distrib">>|_], V) ->
     [{hosts_refresh_interval, V}];
-module_opt([<<"ram_key_size">>, <<"mod_keystore">>|_], V) ->
-    [{ram_key_size, V}];
-module_opt([<<"keys">>, <<"mod_keystore">>|_] = Path, V) ->
-    Keys = parse_list(Path, V),
-    [{keys, Keys}];
 module_opt([<<"access">>, <<"mod_register">>|_], V) ->
     [{access, b2a(V)}];
 module_opt([<<"registration_watchers">>, <<"mod_register">>|_] = Path, V) ->
@@ -351,12 +346,6 @@ mod_global_distrib_connections_endpoints(_, #{<<"host">> := Host, <<"port">> := 
 -spec mod_global_distrib_connections_advertised_endpoints(path(), toml_section()) -> [option()].
 mod_global_distrib_connections_advertised_endpoints(_, #{<<"host">> := Host, <<"port">> := Port}) ->
     [{b2l(Host), Port}].
-
--spec mod_keystore_keys(path(), toml_section()) -> [option()].
-mod_keystore_keys(_, #{<<"name">> := Name, <<"type">> := <<"ram">>}) ->
-    [{b2a(Name), ram}];
-mod_keystore_keys(_, #{<<"name">> := Name, <<"type">> := <<"file">>, <<"path">> := Path}) ->
-    [{b2a(Name), {file, b2l(Path)}}].
 
 -spec mod_revproxy_routes(path(), toml_section()) -> [option()].
 mod_revproxy_routes(_, #{<<"host">> := Host, <<"path">> := Path, <<"method">> := Method,
@@ -667,6 +656,7 @@ node_to_string(Node) -> [binary_to_list(Node)].
         Mod =/= <<"mod_extdisco">>,
         Mod =/= <<"mod_inbox">>,
         Mod =/= <<"mod_jingle_sip">>,
+        Mod =/= <<"mod_keystore">>,
         Mod =/= <<"mod_mam_meta">>,
         Mod =/= <<"mod_muc">>,
         Mod =/= <<"mod_muc_light">>,
@@ -710,8 +700,6 @@ handler([_,<<"advertised_endpoints">>, <<"connections">>, <<"mod_global_distrib"
     fun mod_global_distrib_connections_advertised_endpoints/2;
 handler([_,<<"tls">>, <<"connections">>, <<"mod_global_distrib">>, <<"modules">>]) ->
     fun mod_global_distrib_tls_option/2;
-handler([_, <<"keys">>, <<"mod_keystore">>, <<"modules">>]) ->
-    fun mod_keystore_keys/2;
 handler([_, <<"routes">>, <<"mod_revproxy">>, <<"modules">>]) ->
     fun mod_revproxy_routes/2;
 handler([_, <<"stale_h">>, <<"mod_stream_management">>, <<"modules">>]) ->

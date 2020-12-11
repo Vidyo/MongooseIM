@@ -1818,7 +1818,11 @@ mod_jingle_sip(_Config) ->
     ?errf(T(Base#{<<"sdp_origin">> => <<"aaaaaaaaa">>})).
 
 mod_keystore(_Config) ->
-    T = fun(Opts) -> #{<<"modules">> => #{<<"mod_keystore">> => Opts}} end,
+    T = fun(Keys, Size) -> #{<<"modules">> => 
+                               #{<<"mod_keystore">> => 
+                                   #{<<"keys">> => Keys,
+                                     <<"ram_key_size">> => Size}}}
+    end,
     Keys = [#{<<"name">> => <<"access_secret">>,
               <<"type">> => <<"ram">>},
             #{<<"name">> => <<"access_psk">>,
@@ -1832,14 +1836,16 @@ mod_keystore(_Config) ->
                        <<"path">> => <<"does/not/esit">>},
     InvalidTypeKey = #{<<"name">> => <<"provision_psk">>,
                        <<"type">> => <<"some_cooool_type">>},
+    Size = 10000,
+    InvalidTypeSize = -1,
     MKeys = [{access_secret, ram},
              {access_psk,    {file, "priv/access_psk"}},
              {provision_psk, {file, "priv/provision_psk"}}],
-    Base = #{<<"keys">> => Keys, <<"ram_key_size">> => 10000},
-    MBase = [{keys, MKeys}, {ram_key_size, 10000}],
-    ?eqf(modopts(mod_keystore, MBase), T(Base)),
-    ?errf(T(Base#{<<"keys">> => [NotExistingKey]})),
-    ?errf(T(Base#{<<"keys">> => [InvalidTypeKey]})).
+    MBase = [{keys, MKeys}, {ram_key_size, Size}],
+    ?eqf(modopts(mod_keystore, MBase), T(Keys, Size)),
+    ?errf(T([NotExistingKey], Size)),
+    ?errf(T([InvalidTypeKey], Size)),
+    ?errf(T(Keys, InvalidTypeSize)).
 
 mod_last(_Config) ->
     T = fun(Opts) -> #{<<"modules">> => #{<<"mod_last">> => Opts}} end,
