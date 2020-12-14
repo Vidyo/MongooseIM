@@ -104,19 +104,6 @@ post_process_module(Mod, Opts) ->
 
 %% path: (host_config[].)modules.*.*
 -spec module_opt(path(), toml_value()) -> [option()].
-module_opt([<<"host">>, <<"mod_http_upload">>|_], V) ->
-    [{host, b2l(V)}];
-module_opt([<<"backend">>, <<"mod_http_upload">>|_], V) ->
-    [{backend, b2a(V)}];
-module_opt([<<"expiration_time">>, <<"mod_http_upload">>|_], V) ->
-    [{expiration_time, V}];
-module_opt([<<"token_bytes">>, <<"mod_http_upload">>|_], V) ->
-    [{token_bytes, V}];
-module_opt([<<"max_file_size">>, <<"mod_http_upload">>|_], V) ->
-    [{max_file_size, V}];
-module_opt([<<"s3">>, <<"mod_http_upload">>|_] = Path, V) ->
-    S3Opts = parse_section(Path, V),
-    [{s3, S3Opts}];
 module_opt([<<"access">>, <<"mod_register">>|_], V) ->
     [{access, b2a(V)}];
 module_opt([<<"registration_watchers">>, <<"mod_register">>|_] = Path, V) ->
@@ -245,18 +232,6 @@ riak_opts([<<"search_index">>|_], V) ->
 -spec mod_register_ip_access_rule(path(), toml_section()) -> [option()].
 mod_register_ip_access_rule(_, #{<<"address">> := Addr, <<"policy">> := Policy}) ->
     [{b2a(Policy), b2l(Addr)}].
-
--spec mod_http_upload_s3(path(), toml_value()) -> [option()].
-mod_http_upload_s3([<<"bucket_url">>|_], V) ->
-    [{bucket_url, b2l(V)}];
-mod_http_upload_s3([<<"add_acl">>|_], V) ->
-    [{add_acl, V}];
-mod_http_upload_s3([<<"region">>|_], V) ->
-    [{region, b2l(V)}];
-mod_http_upload_s3([<<"access_key_id">>|_], V) ->
-    [{access_key_id, b2l(V)}];
-mod_http_upload_s3([<<"secret_access_key">>|_], V) ->
-    [{secret_access_key, b2l(V)}].
 
 -spec mod_revproxy_routes(path(), toml_section()) -> [option()].
 mod_revproxy_routes(_, #{<<"host">> := Host, <<"path">> := Path, <<"method">> := Method,
@@ -554,6 +529,7 @@ node_to_string(Node) -> [binary_to_list(Node)].
         Mod =/= <<"mod_event_pusher">>,
         Mod =/= <<"mod_extdisco">>,
         Mod =/= <<"mod_global_distrib">>,
+        Mod =/= <<"mod_http_upload">>,
         Mod =/= <<"mod_inbox">>,
         Mod =/= <<"mod_jingle_sip">>,
         Mod =/= <<"mod_keystore">>,
@@ -584,8 +560,6 @@ handler([_, <<"registration_watchers">>, <<"mod_register">>, <<"modules">>]) ->
     fun(_, V) -> [V] end;
 handler([_, <<"welcome_message">>, <<"mod_register">>, <<"modules">>]) ->
     fun welcome_message/2;
-handler([_, <<"s3">>, <<"mod_http_upload">>, <<"modules">>]) ->
-    fun mod_http_upload_s3/2;
 handler([_, <<"routes">>, <<"mod_revproxy">>, <<"modules">>]) ->
     fun mod_revproxy_routes/2;
 handler([_, <<"stale_h">>, <<"mod_stream_management">>, <<"modules">>]) ->

@@ -120,39 +120,6 @@ validate([<<"body">>, <<"welcome_message">>, <<"mod_register">>, <<"modules">>|_
 validate([<<"subject">>, <<"welcome_message">>, <<"mod_register">>, <<"modules">>|_],
          [{subject, V}]) ->
     validate_string(V);
-validate([<<"backend">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{backend, V}]) ->
-    validate_backend(mod_http_upload, V);
-validate([<<"expiration_time">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{expiration_time, V}]) ->
-    validate_non_negative_integer(V);
-validate([<<"host">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{host, V}]) ->
-    validate_domain_template(V);
-validate([<<"iqdisc">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{iqdisc, V}]) ->
-    validate_iqdisc(V);
-validate([<<"max_file_size">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{max_file_size, V}]) ->
-    validate_non_negative_integer(V);
-validate([<<"access_key_id">>, <<"s3">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{access_key_id, V}]) ->
-    validate_string(V);
-validate([<<"add_acl">>, <<"s3">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{add_acl, V}]) ->
-    validate_boolean(V);
-validate([<<"bucket_url">>, <<"s3">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{bucket_url, V}]) ->
-    validate_url(V);
-validate([<<"region">>, <<"s3">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{region, V}]) ->
-    validate_string(V);
-validate([<<"secret_access_key">>, <<"s3">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{secret_access_key, V}]) ->
-    validate_string(V);
-validate([<<"token_bytes">>, <<"mod_http_upload">>, <<"modules">>|_],
-         [{token_bytes, V}]) ->
-    validate_positive_integer(V);
 validate([<<"backend">>, <<"mod_last">>, <<"modules">>|_],
          [{backend, V}]) ->
     validate_backend(mod_last, V);
