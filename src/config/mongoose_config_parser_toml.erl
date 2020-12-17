@@ -175,9 +175,6 @@ module_opt([<<"muc">>, <<"mod_mam_meta">>|_] = Path, V) ->
     [{muc, Muc}];
 module_opt([_, <<"mod_mam_meta">>|_] = Path, V) ->
     mod_mam_opts(Path, V);
-module_opt([<<"routes">>, <<"mod_revproxy">>|_] = Path, V) ->
-    Routes = parse_list(Path, V),
-    [{routes, Routes}];
 % General options
 module_opt([<<"iqdisc">>|_], V) ->
     {Type, Opts} = maps:take(<<"type">>, V),
@@ -360,13 +357,6 @@ mod_mam_opts([<<"extra_lookup_params">>|_], V) ->
     [{extra_lookup_params, b2a(V)}];
 mod_mam_opts([<<"riak">>|_] = Path, V) ->
     parse_section(Path, V).
-
--spec mod_revproxy_routes(path(), toml_section()) -> [option()].
-mod_revproxy_routes(_, #{<<"host">> := Host, <<"path">> := Path, <<"method">> := Method,
-    <<"upstream">> := Upstream}) ->
-        [{b2l(Host), b2l(Path), b2l(Method), b2l(Upstream)}];
-mod_revproxy_routes(_, #{<<"host">> := Host, <<"path">> := Path, <<"upstream">> := Upstream}) ->
-        [{b2l(Host), b2l(Path), b2l(Upstream)}].
 
 -spec iqdisc_value(atom(), toml_section()) -> option().
 iqdisc_value(queues, #{<<"workers">> := Workers} = V) ->
@@ -687,8 +677,6 @@ handler([_, <<"keys">>, <<"mod_keystore">>, <<"modules">>]) ->
     fun mod_keystore_keys/2;
 handler([_, _, <<"mod_mam_meta">>, <<"modules">>]) ->
     fun mod_mam_opts/2;
-handler([_, <<"routes">>, <<"mod_revproxy">>, <<"modules">>]) ->
-    fun mod_revproxy_routes/2;
 
 %% host_config
 handler([_, <<"host_config">>]) -> fun process_host_item/2;

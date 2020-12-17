@@ -193,9 +193,6 @@ validate([<<"bucket_type">>, <<"riak">>, <<"mod_last">>, <<"modules">>|_],
 validate([<<"iqdisc">>, <<"mod_time">>, <<"modules">>|_],
          [{iqdisc, V}]) ->
     validate_iqdisc(V);
-validate([item, <<"routes">>, <<"mod_revproxy">>, <<"modules">>|_],
-         [V]) ->
-    validate_revproxy_route(V);
 validate([<<"archive_chat_markers">>, <<"mod_mam_meta">>, <<"modules">>|_],
          [{archive_chat_markers, V}]) ->
     validate_boolean(V);
